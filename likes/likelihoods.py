@@ -4,7 +4,7 @@ from cobaya.theory import Theory
 
 import sys
 sys.path.append('../')
-from postemul import Chi2
+from mountaineer import Chi2
 
 #########################################
 class Chi2Like(Likelihood):
