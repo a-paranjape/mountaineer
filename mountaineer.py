@@ -1,7 +1,8 @@
 import numpy as np
 import sys
 
-sys.path.append('/home/aseem/python_modules/MachineLearning/mlfundas/code/')
+from paths import ML_Path
+sys.path.append(ML_Path)
 from utilities import Utilities
 from mllib import MLUtilities
 from mlmodules import Module
