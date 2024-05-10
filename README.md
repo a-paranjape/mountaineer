@@ -10,7 +10,7 @@ Algorithm for posterior emulation using walkers exploring the posterior landscap
 ## Installation
 * Clone into `mlfundas` [here](https://github.com/a-paranjape/mlfundas).
 * Clone into `picasa` [here](https://bitbucket.org/aparanjape/picasa/).
-* Edit `paths.py`, replacing `ML_Path` with the local path to `mlfundas/code/' and `Picasa_Path` with the local path to `picasa/code/`.
+* Edit `paths.py`, replacing `ML_Path` with the local path to `mlfundas/code/` and `Picasa_Path` with the local path to `picasa/code/`.
 * Install Cobaya by following the instructions [here](https://cobaya.readthedocs.io/en/latest/installation.html).
 
 ## Contact
