@@ -35,7 +35,7 @@ theory:
     speed: -1
     stop_at_error: false
     version: null
-    python_path: ../likes/
+    python_path: ../code/likes/
     input_params:
     - A1
     - mu1
@@ -1013,7 +1013,7 @@ likelihood:
     speed: -1
     stop_at_error: false
     version: null
-    python_path: ../likes/
+    python_path: ../code/likes/
     input_params: []
     output_params: []
 params:

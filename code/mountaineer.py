@@ -9,9 +9,6 @@ from mlmodules import Module
 import copy,pickle
 
 import matplotlib.pyplot as plt
-# from matplotlib import gridspec
-# import matplotlib as mpl
-# import matplotlib.colors as pltcol
 import gc
 
 class Chi2(Module,MLUtilities):
