@@ -230,9 +230,8 @@ class Walker(Module,MLUtilities,Utilities):
         Ypred = self.model.forward(self.X)
         loss = self.loss.forward(Ypred)
         
-        if np.isfinite(loss):
-            seq = [loss] + list(self.model.params.T[0])
-            self.write_to_file(self.out_file,seq)
+        seq = [loss] + list(self.model.params.T[0])
+        self.write_to_file(self.out_file,seq)
 
         if save_setup:
             with open(self.file_stem + '.pkl', 'wb') as f:
