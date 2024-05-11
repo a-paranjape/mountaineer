@@ -328,7 +328,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'X': array of X [control variable] (1,n_samp)
             -- 'Y': array of Y [target] (1,n_samp)
             -- 'val_frac': float between 0..1, fraction of data to use for validation in Walker.train()
-            -- 'loss': Instance of loss function containing forward (prediction) 
+            -- 'loss': Loss function module containing forward (prediction) 
                                 and backward (gradient update) methods. Should be compatible with X,Y.
             -- 'seed': int or None, random number seed.
             -- 'walks_exist': boolean. If True, data files will not be overwritten and training will not be allowed. Default False. 
@@ -339,7 +339,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'max_epoch': int, number of epochs (equiv: loss calls or model evaluations) per mini-batch. Default 30.
             -- 'mb_count': int, number of mini-batches. Default 3.
             -- 'lrate': float, SGD learning rate. Default 0.1. # CAN THIS BE NON-DIMENSIONALISED?
-            -- 'loss_params': dictionary with key 'invcov_mat' containing inverse covariance matrix of *full* data set.
+            -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
+                              E.g. for Chi2 this would be 'invcov_mat' containing inverse covariance matrix of *full* data set.
             -- 'check_after': int, number of epochs after which to check for increase in validation loss. Default 10.
 
             Methods:
