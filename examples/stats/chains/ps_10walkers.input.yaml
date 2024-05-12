@@ -1,6 +1,6 @@
 theory:
   examplelikes.PowSineTheory:
-    python_path: ../likes/
+    python_path: ../code/likes/
     X:
     - - -2.0
       - -1.793103448275862
@@ -34,7 +34,7 @@ theory:
       - 4.0
 likelihood:
   likelihoods.Chi2Like:
-    python_path: ../likes/
+    python_path: ../code/likes/
     X:
     - - -2.0
       - -1.793103448275862
