@@ -10,10 +10,10 @@ from mountaineer import Chi2
 class Chi2Like(Likelihood):
     X = None
     Y = None
-    invcov_mat = None
+    cov_mat = None
     #########################################
     def initialize(self):
-        self.loss_params = {'Y_full':self.Y,'invcov_mat':self.invcov_mat}
+        self.loss_params = {'Y_full':self.Y,'cov_mat':self.cov_mat}
         self.loss = Chi2(params=self.loss_params)
     #########################################
 

@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.linalg as linalg
 import sys
 
 from paths import ML_Path
@@ -17,16 +18,29 @@ class Chi2(Module,MLUtilities):
         if self.Y_full is None:
             raise ValueError("Need to supply targets on full sample (training+validation) as key 'Y_full' in Chi2.")        
         
-        invcov_mat = params.get('invcov_mat',None)
-        self.invcov_mat = np.eye(self.Y_full.shape[1]) if invcov_mat is None else invcov_mat
-        if self.invcov_mat.shape != (self.Y_full.shape[1],self.Y_full.shape[1]):
-            raise ValueError('Incompatible invcov_mat in Chi2.')
-        # this is full inv cov mat, to be passed only once by user in initial parameter dictionary
+        cov_mat = params.get('cov_mat',None)
+        self.cov_mat = np.eye(self.Y_full.shape[1]) if cov_mat is None else cov_mat
+        if self.cov_mat.shape != (self.Y_full.shape[1],self.Y_full.shape[1]):
+            raise ValueError('Incompatible cov_mat in Chi2.')
+        if np.any(linalg.eigvals(self.cov_mat) <= 0.0):
+            raise ValueError('Non-positive definite covariance matrix detected')
+        # this is full cov mat, to be passed only once by user in initial parameter dictionary
+
+        # uncomment block below to get inv cov mat focus
+        # invcov_mat = params.get('invcov_mat',None)
+        # self.invcov_mat = np.eye(self.Y_full.shape[1]) if invcov_mat is None else invcov_mat
+        # if self.invcov_mat.shape != (self.Y_full.shape[1],self.Y_full.shape[1]):
+        #     raise ValueError('Incompatible invcov_mat in Chi2.')
+        # # this is full inv cov mat, to be passed only once by user in initial parameter dictionary
 
         self.subset = params.get('subset',np.s_[:]) # slice or array of indices, used to extract (shuffled) training or validation elems.
         self.Y_sub = self.Y_full[:,self.subset].copy()
         self.n_sub = self.Y_sub.shape[1] # n_sub = n_samp for this data set
-        self.invcov_mat_sub = self.invcov_mat[:,self.subset][self.subset,:].copy()
+
+        self.cov_mat_sub = self.cov_mat[:,self.subset][self.subset,:].copy()
+        self.L_sub = linalg.cholesky(self.cov_mat_sub,lower=True) # so C = L L^T
+        # uncomment below to get inv cov mat focus
+        # self.invcov_mat_sub = self.invcov_mat[:,self.subset][self.subset,:].copy()
         
         self.slice_b = params.get('slice_b',np.s_[:]) # batch slice, indexed on self.subset
         self.batch_mask = np.zeros(self.n_sub)
@@ -50,15 +64,35 @@ class Chi2(Module,MLUtilities):
     def forward(self,Ypred_sub):
         resid_sub = Ypred_sub - self.Y_sub # (1,n_samp)
         self.resid_b = resid_sub*self.batch_mask # (1,n_samp) with non-zero only in batch
-        self.Loss_vec = np.dot(self.invcov_mat_sub,resid_sub.T)*self.batch_mask # (n_samp,1) with non-zero only in batch
+        z = linalg.cho_solve((self.L_sub,True),resid_sub[0],check_finite=False) # solves (L L^T) z = resid or z = C^-1 residual, shape (nsamp,)
+        self.Loss_vec = self.cv(z*self.batch_mask) # (n_samp,1) with non-zero only in batch
+        # uncomment below to get inv cov mat focus
+        # self.Loss_vec = np.dot(self.invcov_mat_sub,resid_sub.T)*self.batch_mask # (n_samp,1) with non-zero only in batch
         Loss = np.dot(self.resid_b,self.Loss_vec) # (1,1)
         return Loss[0,0] # scalar
 
     def backward(self):
         dLdm = self.Loss_vec.T # (1,n_samp)
-        dLdm += np.dot(self.resid_b,self.invcov_mat_sub) # (1,n_samp) x (n_samp,n_samp) = (1,n_samp)
-        # dLdm = 2*self.resid_b # (1,n_samp) 
+        z = self.rv(linalg.cho_solve((self.L_sub,True),self.resid_b[0],check_finite=False))
+        # solves (L L^T) z^T = resid or z = (C^-1 resid)^T, shape (1,n_samp)
+        dLdm += z
+        # uncomment below to get inv cov mat focus
+        # dLdm += np.dot(self.resid_b,self.invcov_mat_sub) # (1,n_samp) x (n_samp,n_samp) = (1,n_samp)
         return dLdm
+
+    # uncomment two blocks below to get inv cov mat focus
+    # def forward(self,Ypred_sub):
+    #     resid_sub = Ypred_sub - self.Y_sub # (1,n_samp)
+    #     self.resid_b = resid_sub*self.batch_mask # (1,n_samp) with non-zero only in batch
+    #     self.Loss_vec = np.dot(self.invcov_mat_sub,resid_sub.T)*self.batch_mask # (n_samp,1) with non-zero only in batch
+    #     Loss = np.dot(self.resid_b,self.Loss_vec) # (1,1)
+    #     return Loss[0,0] # scalar
+
+    # def backward(self):
+    #     dLdm = self.Loss_vec.T # (1,n_samp)
+    #     dLdm += np.dot(self.resid_b,self.invcov_mat_sub) # (1,n_samp) x (n_samp,n_samp) = (1,n_samp)
+    #     # dLdm = 2*self.resid_b # (1,n_samp) 
+    #     return dLdm
 
 
 class Walker(Module,MLUtilities,Utilities):
@@ -71,7 +105,7 @@ class Walker(Module,MLUtilities,Utilities):
             -- 'model': Instance of Model containing forward (prediction),
                                    backward (gradient update) and sgd_step (with adam support) methods.
             -- 'params_init': starting array of parameters (n_param,1), compatible with model
-            -- 'loss': Instance of loss function containing forward (prediction) 
+            -- 'loss': Loss function module containing forward (prediction) 
                                 and backward (gradient update) methods. Should be compatible with X,Y.
             -- 'seed': int, random number seed.
             -- 'file_stem': str, common stem for generating filenames for saving 
@@ -502,7 +536,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
         plt.figure(figsize=(5,5))
         plt.xlabel('x')
         plt.ylabel('y')
-        errors = 1/np.sqrt(np.diag(self.loss_params['invcov_mat']))
+        errors = np.sqrt(np.diag(self.loss_params['cov_mat']))
+        # uncomment below to get inv cov mat focus
+        # errors = 1/np.sqrt(np.diag(self.loss_params['invcov_mat']))
         imin = self.Y[0].argmin()
         imax = self.Y[0].argmax()
         plt.ylim(self.Y[0][imin]-1.5*errors[imin],self.Y[0][imax]+1.5*errors[imax])
