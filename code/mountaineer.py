@@ -182,6 +182,7 @@ class Walker(Module,MLUtilities,Utilities):
         loss_params = copy.deepcopy(params.get('loss_params',{})) # dictionary for initialising loss module mini-batch-wise
         loss_params['Y_full'] = self.Y.copy() # full target data; loaded independent of loss type
 
+        
         check_after = params.get('check_after',10)
         check_after = np.max([check_after,2])
         
