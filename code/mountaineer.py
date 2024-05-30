@@ -345,25 +345,28 @@ class Mountaineer(Module,MLUtilities,Utilities):
             data_pack should be dictionary with a subset of following keys:
 
             ** needed for self instance **
-            -- 'N_walker': int, number of walkers to initialize. Default 10.
+            -- 'N_evals_max': int, maximum number of model evaluations allowed. Default 100.
+            -- 'survey_frac': float, fraction of N_evals_max to use for initial survey. Default 0.1.
             -- 'file_stem': str, common stem for generating filenames for saving 
                                        (should include full path).
             -- 'model': sub-class of Model with user-defined calc_model() and calc_dmdtheta() methods.
             -- 'n_params': int, number of parameters in model.
-            -- 'param_mins','param_maxs': array-likes of floats (n_params,) - minimum and maximum values for parameters 
-
+            -- 'param_mins','param_maxs': array-likes of floats (n_params,) - guesses for minimum and maximum values for parameters 
+            
+            ## Adam params will eventually be hidden ##
             -- 'adam': bool, whether or not to implement adam support. ** Strongly recommend True. **
             -- 'B1_adam': float, adam parameter for momentum. Default 0.9.
             -- 'B2_adam': float, adam parameter for adadelta. Default 0.999.
             -- 'eps_adam': float, adam parameter for zero-division safety. Default 1e-8.
+            ##
 
             ** passed to Walker instances **
             -- 'X': array of X [control variable] (1,n_samp)
             -- 'Y': array of Y [target] (1,n_samp)
-            -- 'val_frac': float between 0..1, fraction of data to use for validation in Walker.train()
+            -- 'val_frac': float between 0..1, fraction of data to use for validation in Walker.train(). Default 0.2.
             -- 'loss': Loss function module containing forward (prediction) 
                                 and backward (gradient update) methods. Should be compatible with X,Y.
-            -- 'seed': int or None, random number seed.
+            -- 'seed': int or None (default), random number seed.
             -- 'walks_exist': boolean. If True, data files will not be overwritten and training will not be allowed. Default False. 
             -- 'verbose': boolean, whether of not to print output (default True).
             -- 'logfile': None or str, file into which to print output (default None, print to stdout)
@@ -373,7 +376,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'mb_count': int, number of mini-batches. Default 3.
             -- 'lrate': float, SGD learning rate. Default 0.1. # CAN THIS BE NON-DIMENSIONALISED?
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
-                              E.g. for Chi2 this would be 'invcov_mat' containing inverse covariance matrix of *full* data set.
+                              E.g. for Chi2 this would be 'cov_mat' containing inverse covariance matrix of *full* data set.
             -- 'check_after': int, number of epochs after which to check for increase in validation loss. Default 10.
 
             Methods:
@@ -382,7 +385,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- visualize: makes simple plots of walker outputs
         """
         Utilities.__init__(self)
-        self.N_walker = data_pack.get('N_walker',10)
+        self.N_evals_max = data_pack.get('N_evals_max',100)
+        self.survey_frac = data_pack.get('survey_frac',0.1)
         self.file_stem = data_pack.get('file_stem','walk')
         self.walks_file = self.file_stem + '_all.txt'
         self.Model = data_pack.get('model',None)
@@ -390,6 +394,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_mins = data_pack.get('param_mins',None)
         self.param_maxs = data_pack.get('param_maxs',None)
 
+        self.N_survey = int(self.survey_frac*self.N_evals_max)
+        self.N_evals_max_walk = self.N_evals_max - self.N_survey
+        
         # adam setup
         self.adam = data_pack.get('adam',True)
         self.B1_adam = data_pack.get('B1_adam',0.9)
@@ -398,8 +405,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         self.check_init()
         
-        model_inst = self.Model(n_params=self.n_params,adam=self.adam,
-                                B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
+        self.model_inst = self.Model(n_params=self.n_params,adam=self.adam,
+                                     B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
         
         self.X = data_pack.get('X',None)
         self.Y = data_pack.get('Y',None)
@@ -413,10 +420,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         if self.verbose:
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
+            
+        self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
+
+        ###########################################
+        # remove these from here
+        self.N_walker = ?? # 10
+        
+        if self.verbose:
             self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
         
         dp_walk = {'X':self.X,'Y':self.Y,'val_frac':self.val_frac,
-                   'model':model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
+                   'model':self.model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
                    'seed':self.seed,'verbose':False,'logfile':self.logfile}
 
         self.walkers = []
@@ -429,18 +444,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         if self.verbose:
             self.print_this('... setting up training parameters',self.logfile)
-
-        self.max_epoch = data_pack.get('max_epoch',30)
-        self.mb_count = data_pack.get('mb_count',3)
-        self.lrate = data_pack.get('lrate',0.1)
-        self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
-        self.check_after = data_pack.get('check_after',10)
+            
+        self.max_epoch = ?? # 30
+        self.mb_count = ?? # 3
+        self.lrate = ?? # 0.1
+        self.check_after = ?? # 10
 
         self.params_train = {'max_epoch':self.max_epoch,
                              'mb_count':self.mb_count,
                              'lrate':self.lrate,
                              'loss_params':self.loss_params,
                              'check_after':self.check_after}
+        ###########################################
 
         if self.verbose:
             self.print_this('... setting up visualization colors',self.logfile)
@@ -470,6 +485,49 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         return
 
+    def explore(self):
+        """ User-friendly wrapper to perform all tasks:
+            * use small fraction of N_evals_max to update param_mins,param_maxs
+            * judiciously distribute remaining evals amongst walkers and decide their training parameters
+            * train all walkers and store outputs
+            * gather all outputs
+            Returns: 
+            -- walks: list of arrays, each element is output of Walker.load() [can be fed to visualize().]
+        """
+        if not self.walks_exist:
+            # initial survey
+            self.survey()
+            # train all walkers
+            self.climb()
+        else:
+            if self.verbose:
+                self.print_this('Walks exist. No survey or climbing.',self.logfile)
+
+        # consolidate walker outputs
+        walks = self.gather()
+        
+        return walks
+
+    def survey(self):
+        """ Use small fraction survey_frac of N_evals_max to do initial survey and update param_mins,param_maxs if needed. """
+        if self.walks_exist:
+            raise Exception('Walks exist! No surveying allowed.')
+        
+        if self.verbose:
+            self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
+            
+        model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
+        survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
+                                                       param_mins=self.param_mins,param_maxs=self.param_maxs)
+        loss = self.loss_module(params=self.loss_params)
+        loss_survey = np.zeros(self.N_survey)
+        for s in range(self.N_survey):
+            model_survey.params = survey_params[s:s+1,:].T
+            # calculate total loss at survey parameters
+            Ypred = model_survey.forward(self.X)
+            loss_survey[s] = loss.forward(Ypred)
+        
+        return
 
     def climb(self):
         """ Train all walkers and store outputs. """
@@ -490,7 +548,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
         return
 
     def gather(self):
-        """ Gather all walker outputs. Should be called after invoking self.climb. """
+        """ Gather all walker outputs in single file. Should be called after invoking self.climb. 
+            Returns: 
+            -- walks: list of arrays, each element is output of Walker.load() [can be fed to visualize().]
+        """
         walks = []
         for w in self.walkers:
             walks.append(w.load())
