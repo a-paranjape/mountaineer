@@ -404,13 +404,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.B2_adam = data_pack.get('B2_adam',0.999)
         self.eps_adam = data_pack.get('eps_adam',1e-8)
 
+        self.X = data_pack.get('X',None)
+        self.Y = data_pack.get('Y',None)
+        
         self.check_init()
         
         self.model_inst = self.Model(n_params=self.n_params,adam=self.adam,
                                      B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
         
-        self.X = data_pack.get('X',None)
-        self.Y = data_pack.get('Y',None)
         self.val_frac = data_pack.get('val_frac',0.2) # fraction of input data to use for validation
         
         self.loss_module = data_pack.get('loss',Chi2) 
@@ -424,8 +425,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
 
-        # loss difference threshold for survey. could be put under user control.
-        self.Delta_loss_threshold = 50.0 # exp(-20) ~ 2e-9 < 5sigma PTE for Gaussian. 50 should be conservative enough.
+        # loss difference threshold for survey. what is a principled way of setting this?
+        # NOT ROBUST TO VERY BROAD INITIAL RANGE
+        self.Delta_loss_threshold = 20.0*(self.X.shape[1] - self.n_params)
         
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         
@@ -452,6 +454,12 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if len(self.param_maxs) != self.n_params:
             raise ValueError('Incompatible param_maxs and n_params in Mountaineer.')
 
+        if self.X is None:
+            raise ValueError("Need to specify valid data X in Mountaineer.")
+
+        if self.Y is None:
+            raise ValueError("Need to specify valid data Y in Mountaineer.")
+        
         return
     ###########################################
     
@@ -526,6 +534,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         l_max = loss_survey.max()
         l_min = loss_survey.min()
         
+        # NOT ROBUST TO VERY BROAD INITIAL RANGE
         while (loss_survey.size > 1) & ((l_max - l_min) > self.Delta_loss_threshold):
             # find one parameter direction along which s_max is furthest out
             positive = 1
@@ -538,9 +547,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     break
             # modify param_mins or param_maxs for furthest (last value of n)
             if positive:
-                self.param_maxs[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n]) # just below largest
+                self.param_maxs[n] = 0.5*(survey_params[s_max,n] + all_but_smax.max()) # between largest and 2nd largest
+                # self.param_maxs[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n]) # just below largest
             else:
-                self.param_mins[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n]) # just above smallest
+                self.param_mins[n] = 0.5*(survey_params[s_max,n] + all_but_smax.min()) # between smallest and 2nd smallest
+                # self.param_mins[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n]) # just above smallest
                 
             # delete s_max
             survey_params = np.delete(survey_params,s_max,axis=0)
