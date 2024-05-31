@@ -537,9 +537,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         self.param_maxs_old = copy.deepcopy(self.param_maxs)
         self.param_mins_old = copy.deepcopy(self.param_mins)
+        
         s_max = np.argmax(loss_survey)
         l_max = loss_survey.max()
         l_min = loss_survey.min()
+        
         while (loss_survey.size > 0) & ((l_max - l_min) > self.Delta_loss_threshold):
             # find one parameter direction along which s_max is furthest out
             furthest = 0
