@@ -423,6 +423,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
 
+        # loss difference threshold for survey. could be put under user control.
+        self.Delta_loss_threshold = 50.0 # exp(-20) ~ 2e-9 < 5sigma PTE for Gaussian. 50 should be conservative enough.
+        
         ###########################################
         # remove these from here
         self.N_walker = ?? # 10
@@ -519,14 +522,58 @@ class Mountaineer(Module,MLUtilities,Utilities):
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
         survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
                                                        param_mins=self.param_mins,param_maxs=self.param_maxs)
+        # survey_params has shape (N_survey,n_params)
+        
         loss = self.loss_module(params=self.loss_params)
         loss_survey = np.zeros(self.N_survey)
         for s in range(self.N_survey):
-            model_survey.params = survey_params[s:s+1,:].T
+            model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
             Ypred = model_survey.forward(self.X)
             loss_survey[s] = loss.forward(Ypred)
-        
+            # write this somewhere so as to not lose evaluations !
+            if self.verbose:
+                self.status_bar(s,self.N_survey)
+
+        self.param_maxs_old = copy.deepcopy(self.param_maxs)
+        self.param_mins_old = copy.deepcopy(self.param_mins)
+        s_max = np.argmax(loss_survey)
+        l_max = loss_survey.max()
+        l_min = loss_survey.min()
+        while (loss_survey.size > 0) & ((l_max - l_min) > self.Delta_loss_threshold):
+            # find one parameter direction along which s_max is furthest out
+            furthest = 0
+            pos = 1
+            for n in range(self.n_params):
+                all_but_smax = survey_params[np.arange(self.N_survey) != s_max,n]
+                if np.all(survey_params[s_max,n] > all_but_smax):
+                    furthest = n
+                    break
+                if np.all(survey_params[s_max,n] < all_but_smax):
+                    furthest = n
+                    pos = 0
+                    break
+            # modify param_mins or param_maxs for furthest
+            if pos:
+                self.param_maxs[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n])
+            else:
+                self.param_mins[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n])
+                
+            # delete s_max
+            survey_params = np.delete(survey_params,s_max)
+            loss_survey = np.delete(loss_survey,s_max)
+            # recalculate l_max,l_min,s_max
+            s_max = np.argmax(loss_survey)
+            l_max = loss_survey.max()
+            l_min = loss_survey.min()
+
+        if self.verbose:
+            prnt_str = '... old param_maxs  = ['+','.join([p for p in self.param_maxs_old]) +']\n'
+            prnt_str = '... ... modified to = ['+','.join([p for p in self.param_maxs]) +']\n'
+            prnt_str = '... old param_mins  = ['+','.join([p for p in self.param_mins_old]) +']\n'
+            prnt_str = '... ... modified to = ['+','.join([p for p in self.param_mins]) +']'
+            self.print_this(prnt_str,self.logfile)
+            
         return
 
     def climb(self):
