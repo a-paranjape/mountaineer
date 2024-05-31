@@ -377,7 +377,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'mb_count': int, number of mini-batches. Default 3.
             -- 'lrate': float, SGD learning rate. Default 0.1. # CAN THIS BE NON-DIMENSIONALISED?
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
-                              E.g. for Chi2 this would be 'cov_mat' containing inverse covariance matrix of *full* data set.
+                              E.g. for Chi2 this would be 'cov_mat' containing covariance matrix of *full* data set.
             -- 'check_after': int, number of epochs after which to check for increase in validation loss. Default 10.
 
             Methods:
@@ -430,11 +430,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         
         if self.verbose:
-            self.print_this('... setting up visualization colors',self.logfile)
-        self.cols = iter(plt.cm.Spectral_r(np.linspace(0,1,self.N_walker)))
-        
-        if self.verbose:
-            self.print_this('... done',self.logfile)
+            self.print_this('... initialization done',self.logfile)
     ###########################################
         
     ###########################################
@@ -509,8 +505,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
         survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
                                                        param_mins=self.param_mins,param_maxs=self.param_maxs)
         # survey_params has shape (N_survey,n_params)
-        
-        loss = self.loss_module(params=self.loss_params)
+
+        lp = copy.deepcopy(self.loss_params)
+        lp['Y_full'] = self.Y.copy() # since Walker is not invoked
+        loss = self.loss_module(params=lp)
         loss_survey = np.zeros(self.N_survey)
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
@@ -532,7 +530,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # find one parameter direction along which s_max is furthest out
             positive = 1
             for n in range(self.n_params):
-                all_but_smax = survey_params[np.arange(self.N_survey) != s_max,n]
+                all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n]
                 if np.all(survey_params[s_max,n] > all_but_smax):
                     break
                 if np.all(survey_params[s_max,n] < all_but_smax):
@@ -553,10 +551,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
             l_min = loss_survey.min()
 
         if self.verbose:
-            prnt_str = '... old param_maxs  = ['+','.join([p for p in self.param_maxs_old]) +']\n'
-            prnt_str = '... ... modified to = ['+','.join([p for p in self.param_maxs]) +']\n'
-            prnt_str = '... old param_mins  = ['+','.join([p for p in self.param_mins_old]) +']\n'
-            prnt_str = '... ... modified to = ['+','.join([p for p in self.param_mins]) +']'
+            prnt_str = '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']\n'
+            prnt_str += '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']'
             self.print_this(prnt_str,self.logfile)
             
         return
@@ -599,15 +597,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... setting up training parameters',self.logfile)
             
-        self.max_epoch = self.N_evals_max_walk // self.N_walker # 30
         ####################
         # these two maybe can be put in __init__
         self.mb_count = int(np.sqrt(self.X.shape[1])) # 3
         self.lrate = 0.1 # check sensitivity to this
         ####################
+        self.max_epoch = self.N_evals_max_walk // (self.N_walker*self.mb_count) # 30
         self.check_after = self.max_epoch // 3
         if self.check_after < 2:
-            self.check_after = self.max_epoch + 1 
+            self.check_after = self.max_epoch + 1
+            
+        if self.verbose:
+            self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
+            self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
+            self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
+            self.print_this('... ...       lrate = {0:.3f}'.format(self.lrate),self.logfile)
 
         self.params_train = {'max_epoch':self.max_epoch,
                              'mb_count':self.mb_count,
@@ -691,8 +695,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
     def visualize(self,walks):
         """ Visualize each walk. Expect walks to be output of self.gather(). """
-        if walks is None:
+        if self.distribute == -1:
             raise Exception("Exploration seems to have failed. Can't visualize non-existent walks!")
+        
+        if self.verbose:
+            self.print_this('Visualizing...',self.logfile)
+            self.print_this('... setting up visualization colors',self.logfile)
+        self.cols = iter(plt.cm.Spectral_r(np.linspace(0,1,self.N_walker)))
 
         cols = copy.deepcopy(self.cols)
         plt.figure(figsize=(5,5))
