@@ -339,6 +339,7 @@ class Model(Module,MLUtilities):
 
 class Mountaineer(Module,MLUtilities,Utilities):
     """ Main routines for initialising walkers and climbing. """
+    ###########################################
     def __init__(self,data_pack={}):
         """ Main class to initialise and train all walkers.
 
@@ -346,7 +347,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
             ** needed for self instance **
             -- 'N_evals_max': int, maximum number of model evaluations allowed. Default 100.
-            -- 'survey_frac': float, fraction of N_evals_max to use for initial survey. Default 0.1.
+            -- 'survey_frac': float, fraction of N_evals_max to use for initial survey. Set to zero to skip survey step. Default 0.1.
             -- 'file_stem': str, common stem for generating filenames for saving 
                                        (should include full path).
             -- 'model': sub-class of Model with user-defined calc_model() and calc_dmdtheta() methods.
@@ -426,48 +427,17 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # loss difference threshold for survey. could be put under user control.
         self.Delta_loss_threshold = 50.0 # exp(-20) ~ 2e-9 < 5sigma PTE for Gaussian. 50 should be conservative enough.
         
-        ###########################################
-        # remove these from here
-        self.N_walker = ?? # 10
+        self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         
-        if self.verbose:
-            self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
-        
-        dp_walk = {'X':self.X,'Y':self.Y,'val_frac':self.val_frac,
-                   'model':self.model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
-                   'seed':self.seed,'verbose':False,'logfile':self.logfile}
-
-        self.walkers = []
-        self.pins = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,
-                                        param_mins=self.param_mins,param_maxs=self.param_maxs)
-        for w in range(self.N_walker):
-            dp_walk['file_stem'] = self.file_stem + '_w' + str(w+1)
-            dp_walk['params_init'] = self.pins[w:w+1,:].T
-            self.walkers.append(Walker(data_pack=dp_walk))
-            
-        if self.verbose:
-            self.print_this('... setting up training parameters',self.logfile)
-            
-        self.max_epoch = ?? # 30
-        self.mb_count = ?? # 3
-        self.lrate = ?? # 0.1
-        self.check_after = ?? # 10
-
-        self.params_train = {'max_epoch':self.max_epoch,
-                             'mb_count':self.mb_count,
-                             'lrate':self.lrate,
-                             'loss_params':self.loss_params,
-                             'check_after':self.check_after}
-        ###########################################
-
         if self.verbose:
             self.print_this('... setting up visualization colors',self.logfile)
         self.cols = iter(plt.cm.Spectral_r(np.linspace(0,1,self.N_walker)))
         
         if self.verbose:
             self.print_this('... done',self.logfile)
+    ###########################################
         
-
+    ###########################################
     def check_init(self):
         if self.Model is None:
             raise ValueError("Need to specify valid Model sub-class in Mountaineer.")
@@ -487,7 +457,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             raise ValueError('Incompatible param_maxs and n_params in Mountaineer.')
 
         return
-
+    ###########################################
+    
+    ###########################################
     def explore(self):
         """ User-friendly wrapper to perform all tasks:
             * use small fraction of N_evals_max to update param_mins,param_maxs
@@ -500,8 +472,15 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if not self.walks_exist:
             # initial survey
             self.survey()
-            # train all walkers
-            self.climb()
+            # distribute resources and set training parameters
+            self.distribute()
+            if self.distributed == 1:
+                # train all walkers
+                self.climb()
+            else:
+                if self.verbose:
+                    self.print_this('Not enough walkers. Exploration failed.',self.logfile)
+                return None
         else:
             if self.verbose:
                 self.print_this('Walks exist. No survey or climbing.',self.logfile)
@@ -510,14 +489,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
         walks = self.gather()
         
         return walks
+    ###########################################
 
+    ###########################################
     def survey(self):
         """ Use small fraction survey_frac of N_evals_max to do initial survey and update param_mins,param_maxs if needed. """
         if self.walks_exist:
             raise Exception('Walks exist! No surveying allowed.')
-        
-        if self.verbose:
-            self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
+
+        if self.N_survey > 0:
+            if self.verbose:
+                self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
+        else:
+            if self.verbose:
+                self.print_this('Skipping survey...',self.logfile)
+            return
             
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
         survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
@@ -542,27 +528,24 @@ class Mountaineer(Module,MLUtilities,Utilities):
         l_max = loss_survey.max()
         l_min = loss_survey.min()
         
-        while (loss_survey.size > 0) & ((l_max - l_min) > self.Delta_loss_threshold):
+        while (loss_survey.size > 1) & ((l_max - l_min) > self.Delta_loss_threshold):
             # find one parameter direction along which s_max is furthest out
-            furthest = 0
-            pos = 1
+            positive = 1
             for n in range(self.n_params):
                 all_but_smax = survey_params[np.arange(self.N_survey) != s_max,n]
                 if np.all(survey_params[s_max,n] > all_but_smax):
-                    furthest = n
                     break
                 if np.all(survey_params[s_max,n] < all_but_smax):
-                    furthest = n
-                    pos = 0
+                    positive *= 0
                     break
-            # modify param_mins or param_maxs for furthest
-            if pos:
-                self.param_maxs[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n])
+            # modify param_mins or param_maxs for furthest (last value of n)
+            if positive:
+                self.param_maxs[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n]) # just below largest
             else:
-                self.param_mins[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n])
+                self.param_mins[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n]) # just above smallest
                 
             # delete s_max
-            survey_params = np.delete(survey_params,s_max)
+            survey_params = np.delete(survey_params,s_max,axis=0)
             loss_survey = np.delete(loss_survey,s_max)
             # recalculate l_max,l_min,s_max
             s_max = np.argmax(loss_survey)
@@ -577,12 +560,74 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this(prnt_str,self.logfile)
             
         return
+    ###########################################
 
+    ###########################################
+    def distribute(self):
+        """ Distribute available resources among walkers and set training parameters. 
+            Returns +1 for successful distribution and -1 if not enough walkers can be initialised.
+        """
+        if self.walks_exist:
+            raise Exception('Walks exist! No distribution allowed.')
+        
+        self.N_walker = 2*self.n_params # ?? 10*(n_params/3)
+
+        if self.N_evals_max_walk <= self.N_walker:        
+            if self.verbose:
+                self.print_this('{0:d} evals is not enough for exploration.'.format(self.N_evals_max_walk),self.logfile)
+            self.distributed = -1
+            return             
+        
+        if self.verbose:
+            self.print_this('Distributing available resources ({0:d} evals)...'.format(self.N_evals_max_walk),self.logfile)
+            
+        if self.verbose:
+            self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
+        
+        dp_walk = {'X':self.X,'Y':self.Y,'val_frac':self.val_frac,
+                   'model':self.model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
+                   'seed':self.seed,'verbose':False,'logfile':self.logfile}
+
+        self.walkers = []
+        self.pins = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,
+                                        param_mins=self.param_mins,param_maxs=self.param_maxs)
+        for w in range(self.N_walker):
+            dp_walk['file_stem'] = self.file_stem + '_w' + str(w+1)
+            dp_walk['params_init'] = self.pins[w:w+1,:].T
+            self.walkers.append(Walker(data_pack=dp_walk))
+            
+        if self.verbose:
+            self.print_this('... setting up training parameters',self.logfile)
+            
+        self.max_epoch = self.N_evals_max_walk // self.N_walker # 30
+        ####################
+        # these two maybe can be put in __init__
+        self.mb_count = int(np.sqrt(self.X.shape[1])) # 3
+        self.lrate = 0.1 # check sensitivity to this
+        ####################
+        self.check_after = self.max_epoch // 3
+        if self.check_after < 2:
+            self.check_after = self.max_epoch + 1 
+
+        self.params_train = {'max_epoch':self.max_epoch,
+                             'mb_count':self.mb_count,
+                             'lrate':self.lrate,
+                             'loss_params':self.loss_params,
+                             'check_after':self.check_after}
+        self.distributed = 1
+        return 
+    ###########################################
+
+    ###########################################
     def climb(self):
-        """ Train all walkers and store outputs. """
+        """ Train all walkers and store outputs. Should be called after distribute. """
         if self.walks_exist:
             raise Exception('Walks exist! No climbing allowed.')
-            
+        if self.distributed == 0:
+            raise Exception('Distribution not done! No climbing allowed.')
+        if self.distributed == -1:
+            raise Exception('Distribution not successful! No climbing allowed.')
+        
         if self.verbose:
             self.print_this('Climbing...',self.logfile)
 
@@ -595,7 +640,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... done',self.logfile)
 
         return
+    ###########################################
 
+    ###########################################
     def gather(self):
         """ Gather all walker outputs in single file. Should be called after invoking self.climb. 
             Returns: 
@@ -629,7 +676,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... done',self.logfile)            
 
         return walks
+    ###########################################
 
+    ###########################################
     def load(self):
         walks_file = self.file_stem + '_all.txt'
         if self.verbose:
@@ -637,10 +686,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
         data = np.loadtxt(walks_file).T # (n_params+1,n_steps_allwalks)
 
         return data
+    ###########################################
 
-
+    ###########################################
     def visualize(self,walks):
         """ Visualize each walk. Expect walks to be output of self.gather(). """
+        if walks is None:
+            raise Exception("Exploration seems to have failed. Can't visualize non-existent walks!")
 
         cols = copy.deepcopy(self.cols)
         plt.figure(figsize=(5,5))
@@ -700,3 +752,4 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 plt.show()
 
         return
+    ###########################################
