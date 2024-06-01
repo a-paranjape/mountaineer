@@ -396,7 +396,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_maxs = data_pack.get('param_maxs',None)
 
         self.N_survey = int(self.survey_frac*self.N_evals_max)
-        self.N_evals_max_walk = self.N_evals_max - self.N_survey
+        self.N_evals_max_walk = 0 # will be modified by self.survey()
         
         # adam setup
         self.adam = data_pack.get('adam',True)
@@ -424,10 +424,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
-
-        # loss difference threshold for survey. what is a principled way of setting this?
-        # NOT ROBUST TO VERY BROAD INITIAL RANGE
-        self.Delta_loss_threshold = 20.0*(self.X.shape[1] - self.n_params)
         
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         
@@ -501,15 +497,41 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.walks_exist:
             raise Exception('Walks exist! No surveying allowed.')
 
-        if self.N_survey > 0:
-            if self.verbose:
-                self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
-        else:
+        if self.N_survey <= 0:
             if self.verbose:
                 self.print_this('Skipping survey...',self.logfile)
             return
+
+        self.param_maxs_old = copy.deepcopy(self.param_maxs)
+        self.param_mins_old = copy.deepcopy(self.param_mins)
             
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
+
+        loss_survey = np.array([0]) # dummy array
+        counter = 0
+        while loss_survey.size < (self.N_survey//10):
+            counter += 1
+            if self.verbose:
+                self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
+            survey_params,loss_survey = self.create_survey(model_survey)
+            survey_params,loss_survey = self.adjust_survey(survey_params,loss_survey)
+            
+        self.N_survey *= counter
+        self.N_evals_max_walk = self.N_evals_max - self.N_survey
+        
+        if self.verbose:
+            prnt_str = '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']\n'
+            prnt_str += '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']'
+            self.print_this(prnt_str,self.logfile)
+            
+        return
+    ###########################################
+
+    ###########################################
+    def create_survey(self,model_survey):
+        """ Set up survey. """
         survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
                                                        param_mins=self.param_mins,param_maxs=self.param_maxs)
         # survey_params has shape (N_survey,n_params)
@@ -527,15 +549,30 @@ class Mountaineer(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(s,self.N_survey)
 
-        self.param_maxs_old = copy.deepcopy(self.param_maxs)
-        self.param_mins_old = copy.deepcopy(self.param_mins)
+        return survey_params,loss_survey
+    ###########################################
+    
+    ###########################################
+    def adjust_survey(self,sp,ls):
+        """ One pass of updating param_mins,param_maxs. """
+        survey_params = sp.copy()
+        loss_survey = ls.copy()
+        ################################################################################
+        ################################################################################
+        # SOMETHING CONCEPTUALLY WRONG: runaway adjustment happening apparently unnecessarily
+
+        # loss difference threshold for survey. what is a principled way of setting this?
+        Delta_loss_threshold = 20.0*(self.X.shape[1] - self.n_params)
         
         s_max = np.argmax(loss_survey)
         l_max = loss_survey.max()
         l_min = loss_survey.min()
-        
-        # NOT ROBUST TO VERY BROAD INITIAL RANGE
-        while (loss_survey.size > 1) & ((l_max - l_min) > self.Delta_loss_threshold):
+        if np.isnan(l_max):
+            l_max = np.inf
+        if np.isnan(l_min):
+            l_min = -np.inf
+
+        while (loss_survey.size > 1) & ((l_max - l_min) > Delta_loss_threshold):
             # find one parameter direction along which s_max is furthest out
             positive = 1
             for n in range(self.n_params):
@@ -546,12 +583,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     positive *= 0
                     break
             # modify param_mins or param_maxs for furthest (last value of n)
+            # wt = 0.95 # NOT THE WAY TO DO THIS ?? should be based on 'Mahalonobis distance' a la MultiNest??
             if positive:
-                self.param_maxs[n] = 0.5*(survey_params[s_max,n] + all_but_smax.max()) # between largest and 2nd largest
-                # self.param_maxs[n] = survey_params[s_max,n] - 0.05*np.abs(survey_params[s_max,n]) # just below largest
+                self.param_maxs[n] = survey_params[s_max,n]
+                #wt*survey_params[s_max,n] + (1-wt)*all_but_smax.max() # between largest and 2nd largest
             else:
-                self.param_mins[n] = 0.5*(survey_params[s_max,n] + all_but_smax.min()) # between smallest and 2nd smallest
-                # self.param_mins[n] = survey_params[s_max,n] + 0.05*np.abs(survey_params[s_max,n]) # just above smallest
+                self.param_mins[n] = survey_params[s_max,n]
+                #wt*survey_params[s_max,n] + (1-wt)*all_but_smax.min() # between smallest and 2nd smallest
                 
             # delete s_max
             survey_params = np.delete(survey_params,s_max,axis=0)
@@ -560,17 +598,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
             s_max = np.argmax(loss_survey)
             l_max = loss_survey.max()
             l_min = loss_survey.min()
-
+            if np.isnan(l_max):
+                l_max = np.inf
+            if np.isnan(l_min):
+                l_min = -np.inf
         if self.verbose:
-            prnt_str = '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
-            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']\n'
-            prnt_str += '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
-            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']'
-            self.print_this(prnt_str,self.logfile)
-            
-        return
+            self.print_this('... survey survivors = {0:d}'.format(loss_survey.size),self.logfile)
+        ################################################################################
+        ################################################################################
+        return survey_params,loss_survey
     ###########################################
 
+    
     ###########################################
     def distribute(self):
         """ Distribute available resources among walkers and set training parameters. 
@@ -609,9 +648,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... setting up training parameters',self.logfile)
             
         ####################
-        # these two maybe can be put in __init__
         self.mb_count = int(np.sqrt(self.X.shape[1])) # 3
-        self.lrate = 0.1 # check sensitivity to this
+        self.lrate = 0.2 # check sensitivity to this
         ####################
         self.max_epoch = self.N_evals_max_walk // (self.N_walker*self.mb_count) # 30
         self.check_after = self.max_epoch // 3
