@@ -410,7 +410,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
         # Think how to adjust lrate in response to large priors.
-        self.lrate = 0.2 # can be modified by self.adjust_survey()
+        self.lrate = 0.25 # can be modified by self.adjust_survey()
         
         if self.verbose:
             self.print_this('... initialization done',self.logfile)
@@ -576,7 +576,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             for n in np.arange(self.n_params):
                 all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n] # all param values along direction n, except s_max
                 par_max = 1.0*survey_params[s_max,n]
-                outlier_strength = np.fabs(par_max - survey_params[s_min,n])/param_range[n]
+                outlier_strength = np.fabs(par_max - survey_params[s_min,n])/param_range[n] # abs(max_loss_loc - min_loss_loc)/range
                 if np.all(par_max > all_but_smax):
                     outliers.append(n)
                     positive.append(1)
