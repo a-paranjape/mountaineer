@@ -46,8 +46,8 @@ class GaussMixTheory(Theory):
         keys = list(param_dict.keys())        
         out = np.zeros_like(self.X)
         for c in range(self.n_comp):
-            amp,mu,sig2 = param_dict[keys[3*c]],param_dict[keys[3*c+1]],param_dict[keys[3*c+2]]
-            out += amp*np.exp(-0.5*(self.X-mu)**2/sig2)
+            amp,mu,lnsig2 = param_dict[keys[3*c]],param_dict[keys[3*c+1]],param_dict[keys[3*c+2]]
+            out += amp*np.exp(-0.5*(self.X-mu)**2/np.exp(lnsig2))
         state['model'] = out
     #########################################
 

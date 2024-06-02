@@ -26,21 +26,12 @@ class Chi2(Module,MLUtilities):
             raise ValueError('Non-positive definite covariance matrix detected')
         # this is full cov mat, to be passed only once by user in initial parameter dictionary
 
-        # uncomment block below to get inv cov mat focus
-        # invcov_mat = params.get('invcov_mat',None)
-        # self.invcov_mat = np.eye(self.Y_full.shape[1]) if invcov_mat is None else invcov_mat
-        # if self.invcov_mat.shape != (self.Y_full.shape[1],self.Y_full.shape[1]):
-        #     raise ValueError('Incompatible invcov_mat in Chi2.')
-        # # this is full inv cov mat, to be passed only once by user in initial parameter dictionary
-
         self.subset = params.get('subset',np.s_[:]) # slice or array of indices, used to extract (shuffled) training or validation elems.
         self.Y_sub = self.Y_full[:,self.subset].copy()
         self.n_sub = self.Y_sub.shape[1] # n_sub = n_samp for this data set
 
         self.cov_mat_sub = self.cov_mat[:,self.subset][self.subset,:].copy()
         self.L_sub = linalg.cholesky(self.cov_mat_sub,lower=True) # so C = L L^T
-        # uncomment below to get inv cov mat focus
-        # self.invcov_mat_sub = self.invcov_mat[:,self.subset][self.subset,:].copy()
         
         self.slice_b = params.get('slice_b',np.s_[:]) # batch slice, indexed on self.subset
         self.batch_mask = np.zeros(self.n_sub)
@@ -66,8 +57,6 @@ class Chi2(Module,MLUtilities):
         self.resid_b = resid_sub*self.batch_mask # (1,n_samp) with non-zero only in batch
         z = linalg.cho_solve((self.L_sub,True),resid_sub[0],check_finite=False) # solves (L L^T) z = resid or z = C^-1 residual, shape (nsamp,)
         self.Loss_vec = self.cv(z*self.batch_mask) # (n_samp,1) with non-zero only in batch
-        # uncomment below to get inv cov mat focus
-        # self.Loss_vec = np.dot(self.invcov_mat_sub,resid_sub.T)*self.batch_mask # (n_samp,1) with non-zero only in batch
         Loss = np.dot(self.resid_b,self.Loss_vec) # (1,1)
         return Loss[0,0] # scalar
 
@@ -76,23 +65,7 @@ class Chi2(Module,MLUtilities):
         z = self.rv(linalg.cho_solve((self.L_sub,True),self.resid_b[0],check_finite=False))
         # solves (L L^T) z^T = resid or z = (C^-1 resid)^T, shape (1,n_samp)
         dLdm += z
-        # uncomment below to get inv cov mat focus
-        # dLdm += np.dot(self.resid_b,self.invcov_mat_sub) # (1,n_samp) x (n_samp,n_samp) = (1,n_samp)
         return dLdm
-
-    # uncomment two blocks below to get inv cov mat focus
-    # def forward(self,Ypred_sub):
-    #     resid_sub = Ypred_sub - self.Y_sub # (1,n_samp)
-    #     self.resid_b = resid_sub*self.batch_mask # (1,n_samp) with non-zero only in batch
-    #     self.Loss_vec = np.dot(self.invcov_mat_sub,resid_sub.T)*self.batch_mask # (n_samp,1) with non-zero only in batch
-    #     Loss = np.dot(self.resid_b,self.Loss_vec) # (1,1)
-    #     return Loss[0,0] # scalar
-
-    # def backward(self):
-    #     dLdm = self.Loss_vec.T # (1,n_samp)
-    #     dLdm += np.dot(self.resid_b,self.invcov_mat_sub) # (1,n_samp) x (n_samp,n_samp) = (1,n_samp)
-    #     # dLdm = 2*self.resid_b # (1,n_samp) 
-    #     return dLdm
 
 
 class Walker(Module,MLUtilities,Utilities):
@@ -420,12 +393,24 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.verbose = data_pack.get('verbose',True)
         self.logfile = data_pack.get('logfile',None)
 
+        self.rng = np.random.RandomState(self.seed) # only used in self.adjust_survey for shuffling param directions
+        
         if self.verbose:
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))
+
+        # Don't use loss difference threshold. Won't work for ring-like likelihoods. Instead use threshold on survivor number.
+        # loss difference threshold for survey. what is a principled way of setting this?
+        # self.Delta_loss_threshold = np.min([1490.0,20.0*(self.X.shape[1] - self.n_params)])
+        # since exp(-1490/2) = 5e-324 and exp(-1491/2) = 0.0
+            
+        self.N_evals_max_walk = self.N_evals_max - self.N_survey
         
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
+        self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
+        # Think how to adjust lrate in response to large priors.
+        self.lrate = 0.2 # can be modified by self.adjust_survey()
         
         if self.verbose:
             self.print_this('... initialization done',self.logfile)
@@ -507,23 +492,19 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
 
-        loss_survey = np.array([0]) # dummy array
-        counter = 0
-        while loss_survey.size < (self.N_survey//10):
-            counter += 1
-            if self.verbose:
-                self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
-            survey_params,loss_survey = self.create_survey(model_survey)
-            survey_params,loss_survey = self.adjust_survey(survey_params,loss_survey)
-            
-        self.N_survey *= counter
-        self.N_evals_max_walk = self.N_evals_max - self.N_survey
+        ########################
+        # iteration
+        if self.verbose:
+            self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
+        survey_params,loss_survey = self.create_survey(model_survey)
+        survey_params,loss_survey = self.adjust_survey(survey_params,loss_survey)
+        ########################
         
         if self.verbose:
-            prnt_str = '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
-            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']\n'
-            prnt_str += '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
-            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']'
+            prnt_str = '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
+            prnt_str += '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
+            prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']'
             self.print_this(prnt_str,self.logfile)
             
         return
@@ -548,7 +529,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
                 self.status_bar(s,self.N_survey)
-
+                
+        # NaN is my enemy
+        cond_notnan = ~np.isnan(loss_survey)
+        loss_survey = loss_survey[cond_notnan]
+        survey_params = survey_params[cond_notnan]
+        if self.verbose:
+            self.print_this('... kept {0:d} of {1:d} surveyed points'.format(loss_survey.size,self.N_survey),self.logfile)
+        
         return survey_params,loss_survey
     ###########################################
     
@@ -558,50 +546,68 @@ class Mountaineer(Module,MLUtilities,Utilities):
         survey_params = sp.copy()
         loss_survey = ls.copy()
         ################################################################################
+        # # inspiration from MultiNest: discard points with loss > l_max_prev
+        # # not useful since acceptance rate too low
+        # cond = (loss_survey <= l_max_prev)
+        # survey_params = survey_params[cond]
+        # loss_survey = loss_survey[cond]
+        # del cond
+        # gc.collect()
+        # if loss_survey.size:
         ################################################################################
-        # SOMETHING CONCEPTUALLY WRONG: runaway adjustment happening apparently unnecessarily
-
-        # loss difference threshold for survey. what is a principled way of setting this?
-        Delta_loss_threshold = 20.0*(self.X.shape[1] - self.n_params)
-        
         s_max = np.argmax(loss_survey)
+        s_min = np.argmin(loss_survey)
         l_max = loss_survey.max()
         l_min = loss_survey.min()
-        if np.isnan(l_max):
-            l_max = np.inf
-        if np.isnan(l_min):
-            l_min = -np.inf
+        
+        # use 'Mahalonobis distance' a la MultiNest? easier to use current param range as proxy
 
-        while (loss_survey.size > 1) & ((l_max - l_min) > Delta_loss_threshold):
-            # find one parameter direction along which s_max is furthest out
-            positive = 1
-            for n in range(self.n_params):
-                all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n]
-                if np.all(survey_params[s_max,n] > all_but_smax):
-                    break
-                if np.all(survey_params[s_max,n] < all_but_smax):
-                    positive *= 0
-                    break
-            # modify param_mins or param_maxs for furthest (last value of n)
-            # wt = 0.95 # NOT THE WAY TO DO THIS ?? should be based on 'Mahalonobis distance' a la MultiNest??
-            if positive:
-                self.param_maxs[n] = survey_params[s_max,n]
-                #wt*survey_params[s_max,n] + (1-wt)*all_but_smax.max() # between largest and 2nd largest
+        # adjust survey by deleting outliers and decreasing param range
+        while loss_survey.size > 10: #0.1*self.N_survey: # make this user-adjustable?  
+            # iterate to find parameter direction along which current s_max is strongest outlier
+            positive = []
+            outliers = []
+            strengths = []
+            
+            # store current param ranges
+            param_range = [self.param_maxs[n] - self.param_mins[n] for n in range(self.n_params)]
+            
+            # find all directions along which s_max is an outlier and record strengths
+            for n in np.arange(self.n_params):
+                all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n] # all param values along direction n, except s_max
+                par_max = 1.0*survey_params[s_max,n]
+                outlier_strength = np.fabs(par_max - survey_params[s_min,n])/param_range[n]
+                if np.all(par_max > all_but_smax):
+                    outliers.append(n)
+                    positive.append(1)
+                    strengths.append(outlier_strength)
+                if np.all(par_max < all_but_smax):
+                    outliers.append(n)
+                    positive.append(0)
+                    strengths.append(outlier_strength)
+
+            # determine strongest outlier direction and adjust its param range
+            if len(outliers) > 0:
+                o_max = np.argmax(strengths)
+                # print('n:',outliers[o_max],'; max-min:',l_max-l_min,
+                #       '; pos:',positive[o_max],'; value:',survey_params[s_max,outliers[o_max]])
+                if positive[o_max]:
+                    self.param_maxs[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
+                else:
+                    self.param_mins[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
             else:
-                self.param_mins[n] = survey_params[s_max,n]
-                #wt*survey_params[s_max,n] + (1-wt)*all_but_smax.min() # between smallest and 2nd smallest
-                
+                # worst loss needn't be outlier in any direction. in this case delete the point but don't adjust ranges.
+                pass
+        
             # delete s_max
             survey_params = np.delete(survey_params,s_max,axis=0)
             loss_survey = np.delete(loss_survey,s_max)
-            # recalculate l_max,l_min,s_max
+            # recalculate l_max,l_min,s_max,s_min
             s_max = np.argmax(loss_survey)
+            s_min = np.argmin(loss_survey)
             l_max = loss_survey.max()
             l_min = loss_survey.min()
-            if np.isnan(l_max):
-                l_max = np.inf
-            if np.isnan(l_min):
-                l_min = -np.inf
+            
         if self.verbose:
             self.print_this('... survey survivors = {0:d}'.format(loss_survey.size),self.logfile)
         ################################################################################
@@ -647,9 +653,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... setting up training parameters',self.logfile)
             
-        ####################
-        self.mb_count = int(np.sqrt(self.X.shape[1])) # 3
-        self.lrate = 0.2 # check sensitivity to this
         ####################
         self.max_epoch = self.N_evals_max_walk // (self.N_walker*self.mb_count) # 30
         self.check_after = self.max_epoch // 3
@@ -757,8 +760,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         plt.xlabel('x')
         plt.ylabel('y')
         errors = np.sqrt(np.diag(self.loss_params['cov_mat']))
-        # uncomment below to get inv cov mat focus
-        # errors = 1/np.sqrt(np.diag(self.loss_params['invcov_mat']))
         imin = self.Y[0].argmin()
         imax = self.Y[0].argmax()
         plt.ylim(self.Y[0][imin]-1.5*errors[imin],self.Y[0][imax]+1.5*errors[imax])
