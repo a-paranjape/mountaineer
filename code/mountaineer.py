@@ -369,7 +369,15 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_maxs = data_pack.get('param_maxs',None)
 
         self.N_survey = int(self.survey_frac*self.N_evals_max)
-        self.N_evals_max_walk = 0 # will be modified by self.survey()
+        self.N_evals_max_walk = self.N_evals_max - self.N_survey
+        self.N_lhc_layers = (self.N_survey // 2) + 1
+        ####
+        # will be set by self.create_survey()
+        self.survey_params = None
+        self.lhc_layers = None
+        self.loss_survey = None
+        self.dLdtheta_survey = None
+        ####
         
         # adam setup
         self.adam = data_pack.get('adam',True)
@@ -404,13 +412,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # loss difference threshold for survey. what is a principled way of setting this?
         # self.Delta_loss_threshold = np.min([1490.0,20.0*(self.X.shape[1] - self.n_params)])
         # since exp(-1490/2) = 5e-324 and exp(-1491/2) = 0.0
-            
-        self.N_evals_max_walk = self.N_evals_max - self.N_survey
         
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
-        # Think how to adjust lrate in response to large priors.
-        self.lrate = 0.25 # can be modified by self.adjust_survey()
+        # Think how to adjust lrate in response to large priors and n_params.
+        self.lrate = 0.2 # can be modified by self.adjust_survey()
         
         if self.verbose:
             self.print_this('... initialization done',self.logfile)
@@ -492,13 +498,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
 
-        ########################
-        # iteration
         if self.verbose:
             self.print_this('Surveying using {0:d} locations...'.format(self.N_survey),self.logfile)
-        survey_params,loss_survey = self.create_survey(model_survey)
-        survey_params,loss_survey = self.adjust_survey(survey_params,loss_survey)
-        ########################
+        self.create_survey(model_survey)
+        self.adjust_survey()
         
         if self.verbose:
             prnt_str = '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
@@ -513,35 +516,119 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
     def create_survey(self,model_survey):
         """ Set up survey. """
-        survey_params = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,
-                                                       param_mins=self.param_mins,param_maxs=self.param_maxs)
+        if self.verbose:
+            self.print_this('... creating survey',self.logfile)
+        survey_params,lhc_layers = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,return_layers=True,
+                                                            param_mins=self.param_mins,param_maxs=self.param_maxs)
         # survey_params has shape (N_survey,n_params)
+        #        layers ..  ..    (Nsurvey,)
+        
+        if lhc_layers.max() + 1 > self.N_lhc_layers:
+            raise Exception('Too many layers in LHC! Should be {0:d}, found at least {1:d}'.format(self.N_lhc_layers,lhc_layers.max()+1))
 
+        if self.verbose:
+            self.print_this('... ... evaluating loss values and gradients',self.logfile)
         lp = copy.deepcopy(self.loss_params)
         lp['Y_full'] = self.Y.copy() # since Walker is not invoked
         loss = self.loss_module(params=lp)
         loss_survey = np.zeros(self.N_survey)
+        dLdtheta_survey = np.zeros((self.N_survey,self.n_params))
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
             Ypred = model_survey.forward(self.X)
             loss_survey[s] = loss.forward(Ypred)
+            dLdm = loss.backward()
+            model_survey.backward(dLdm)
+            dLdtheta_survey[s] = model_survey.dLdtheta[:,0]
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
                 self.status_bar(s,self.N_survey)
                 
         # NaN is my enemy
+        if self.verbose:
+            self.print_this('... ... excluding NaNs',self.logfile)
         cond_notnan = ~np.isnan(loss_survey)
         loss_survey = loss_survey[cond_notnan]
         survey_params = survey_params[cond_notnan]
-        if self.verbose:
-            self.print_this('... kept {0:d} of {1:d} surveyed points'.format(loss_survey.size,self.N_survey),self.logfile)
+        lhc_layers = lhc_layers[cond_notnan]
+        dLdtheta_survey = dLdtheta_survey[cond_notnan]
         
-        return survey_params,loss_survey
+        if self.verbose:
+            self.print_this('... ... kept {0:d} of {1:d} surveyed points'.format(loss_survey.size,self.N_survey),self.logfile)
+
+        self.survey_params = survey_params.copy()
+        self.lhc_layers = lhc_layers.copy()
+        self.loss_survey = loss_survey.copy()
+        self.dLdtheta_survey = dLdtheta_survey.copy()
+        
+        return 
     ###########################################
     
     ###########################################
-    def adjust_survey(self,sp,ls):
+    def adjust_survey(self):
+        """ Update param_mins,param_maxs by stepping inwards through LHC layers so long as loss gradients remain 'inward-pointing'. """
+        if (self.survey_params is None):
+            raise Exception("adjust_survey() can only be called after create_survey().")
+        
+        if self.verbose:
+            self.print_this('... adjusting survey',self.logfile)
+            
+        Dp = np.array([self.param_maxs[d] - self.param_mins[d] for d in range(self.n_params)])/self.N_survey
+        # Dp[d] = division size in direction d
+                
+        if self.verbose:
+            self.print_this('... ... looping through layers',self.logfile)
+            
+        # area elements are prod Dp over all but direction in question
+        dArea = np.zeros(self.n_params)
+        for d in range(self.n_params):
+            dArea[d] = np.prod(Dp[np.delete(np.arange(self.n_params),d)])
+                
+        # average divergence of loss
+        for l in range(self.N_lhc_layers):
+            # locations of max and min values in layer along each direction
+            max_layer = np.array([self.param_maxs[d] - l*Dp[d] for d in range(self.n_params)]) 
+            min_layer = np.array([self.param_mins[d] + l*Dp[d] for d in range(self.n_params)]) 
+            # indices of survey points in layer
+            points = np.where(self.lhc_layers == l)[0]
+            # points.size guaranteed positive due to LHC construction
+            if points.size:
+                # condition to proceed to next layer: vol-avg div(loss) > 0, over vol enclosed by layer
+                div_loss = 0.0 # collect contribution from each point on layer.
+                for p in range(points.size):
+                    max_dims = np.where(np.fabs(self.survey_params[points[p]] - max_layer) < 0.1*Dp)[0] 
+                    min_dims = np.where(np.fabs(self.survey_params[points[p]] - min_layer) < 0.1*Dp)[0]
+                    nhat = np.zeros(self.n_params)
+                    nhat[max_dims] = 1.0
+                    nhat[min_dims] = -1.0
+                    nhat /= np.sqrt(np.sum(nhat**2))
+                    div_loss += np.dot(self.dLdtheta_survey[points[p]],nhat*dArea)
+                # note loss ~ -ln(likelihood). we want likelihood grads pointed inwards, hence loss grads pointed outwards.
+                if div_loss < 0.0:
+                    if self.verbose:
+                        self.print_this('... ... avg div(loss) negative at layer {0:d}; breaking.'.format(l),self.logfile)
+                    break
+                # else proceed to next layer
+            
+        l_stay = np.max([0,l]) # use last layer. can be made more conservative later.
+        if l_stay != self.N_lhc_layers-1:
+            if self.verbose:
+                self.print_this('... ... adjusting parameter ranges',self.logfile)
+            # if we sailed thru then probably no change was ever needed!
+            for d in range(self.n_params):
+                self.param_maxs[d] -= l_stay*Dp[d]
+                self.param_mins[d] += l_stay*Dp[d]
+        else:
+            if self.verbose:
+                self.print_this('... ... no adjustment needed (probably!)',self.logfile)
+        
+        return 
+    ###########################################
+
+    
+    ###########################################
+    def adjust_survey_old(self,sp,ls):
         """ One pass of updating param_mins,param_maxs. """
         survey_params = sp.copy()
         loss_survey = ls.copy()
@@ -612,9 +699,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... survey survivors = {0:d}'.format(loss_survey.size),self.logfile)
         ################################################################################
         ################################################################################
-        return survey_params,loss_survey
+        return 
     ###########################################
-
     
     ###########################################
     def distribute(self):
