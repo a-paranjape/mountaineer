@@ -615,11 +615,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if l_stay != self.N_lhc_layers-1:
             if self.verbose:
                 self.print_this('... ... adjusting parameter ranges',self.logfile)
-            # if we sailed thru then probably no change was ever needed!
             for d in range(self.n_params):
                 self.param_maxs[d] -= l_stay*Dp[d]
                 self.param_mins[d] += l_stay*Dp[d]
         else:
+            # if we sailed thru then probably no change was ever needed!
             if self.verbose:
                 self.print_this('... ... no adjustment needed (probably!)',self.logfile)
         
