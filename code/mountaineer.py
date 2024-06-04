@@ -774,8 +774,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
             pmins = np.minimum(self.walkers[w].model.params.T[0],pmins)
         # now pmaxs,pmins respectively have largest,smallest values sampled by walkers in any direction
         
-        self.param_maxs = np.minimum(pmaxs,self.param_maxs_old)
-        self.param_mins = np.maximum(pmins,self.param_mins_old)
+        self.param_maxs = np.maximum(pmaxs,self.param_maxs)
+        self.param_mins = np.minimum(pmins,self.param_mins)
+        
+        self.param_maxs = np.minimum(self.param_maxs,self.param_maxs_old)
+        self.param_mins = np.maximum(self.param_mins,self.param_mins_old)
         # use pmaxs,pmins as bounds, without exceeding user-supplied ranges
 
         if self.verbose:
