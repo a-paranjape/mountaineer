@@ -346,12 +346,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'logfile': None or str, file into which to print output (default None, print to stdout)
 
             ** passed to Walker.train() calls **
-            -- 'max_epoch': int, number of epochs (equiv: loss calls or model evaluations) per mini-batch. Default 30.
-            -- 'mb_count': int, number of mini-batches. Default 3.
             -- 'lrate': float, SGD learning rate. Default 0.1. # CAN THIS BE NON-DIMENSIONALISED?
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
                               E.g. for Chi2 this would be 'cov_mat' containing covariance matrix of *full* data set.
-            -- 'check_after': int, number of epochs after which to check for increase in validation loss. Default 10.
 
             Methods:
             -- climb: trains all requested walkers on given data set, starting at Latin hypercube of initial locations.
@@ -375,8 +372,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # will be set by self.create_survey()
         self.survey_params = None
         self.lhc_layers = None
-        self.loss_survey = None
-        self.dLdtheta_survey = None
+        self.survey_loss = None
+        self.survey_dLdtheta = None
         ####
         
         # adam setup
@@ -415,8 +412,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         
         self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
         self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
-        # Think how to adjust lrate in response to large priors and n_params.
-        self.lrate = 0.2 # can be modified by self.adjust_survey()
         
         if self.verbose:
             self.print_this('... initialization done',self.logfile)
@@ -531,16 +526,16 @@ class Mountaineer(Module,MLUtilities,Utilities):
         lp = copy.deepcopy(self.loss_params)
         lp['Y_full'] = self.Y.copy() # since Walker is not invoked
         loss = self.loss_module(params=lp)
-        loss_survey = np.zeros(self.N_survey)
-        dLdtheta_survey = np.zeros((self.N_survey,self.n_params))
+        survey_loss = np.zeros(self.N_survey)
+        survey_dLdtheta = np.zeros((self.N_survey,self.n_params))
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
             Ypred = model_survey.forward(self.X)
-            loss_survey[s] = loss.forward(Ypred)
+            survey_loss[s] = loss.forward(Ypred)
             dLdm = loss.backward()
             model_survey.backward(dLdm)
-            dLdtheta_survey[s] = model_survey.dLdtheta[:,0]
+            survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
                 self.status_bar(s,self.N_survey)
@@ -548,19 +543,19 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # NaN is my enemy
         if self.verbose:
             self.print_this('... ... excluding NaNs',self.logfile)
-        cond_notnan = ~np.isnan(loss_survey)
-        loss_survey = loss_survey[cond_notnan]
+        cond_notnan = ~np.isnan(survey_loss)
+        survey_loss = survey_loss[cond_notnan]
         survey_params = survey_params[cond_notnan]
         lhc_layers = lhc_layers[cond_notnan]
-        dLdtheta_survey = dLdtheta_survey[cond_notnan]
+        survey_dLdtheta = survey_dLdtheta[cond_notnan]
         
         if self.verbose:
-            self.print_this('... ... kept {0:d} of {1:d} surveyed points'.format(loss_survey.size,self.N_survey),self.logfile)
+            self.print_this('... ... kept {0:d} of {1:d} surveyed points'.format(survey_loss.size,self.N_survey),self.logfile)
 
         self.survey_params = survey_params.copy()
         self.lhc_layers = lhc_layers.copy()
-        self.loss_survey = loss_survey.copy()
-        self.dLdtheta_survey = dLdtheta_survey.copy()
+        self.survey_loss = survey_loss.copy()
+        self.survey_dLdtheta = survey_dLdtheta.copy()
         
         return 
     ###########################################
@@ -603,7 +598,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     nhat[max_dims] = 1.0
                     nhat[min_dims] = -1.0
                     nhat /= np.sqrt(np.sum(nhat**2))
-                    div_loss += np.dot(self.dLdtheta_survey[points[p]],nhat*dArea)
+                    div_loss += np.dot(self.survey_dLdtheta[points[p]],nhat*dArea)
                 # note loss ~ -ln(likelihood). we want likelihood grads pointed inwards, hence loss grads pointed outwards.
                 if div_loss < 0.0:
                     if self.verbose:
@@ -627,80 +622,80 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
 
     
-    ###########################################
-    def adjust_survey_old(self,sp,ls):
-        """ One pass of updating param_mins,param_maxs. """
-        survey_params = sp.copy()
-        loss_survey = ls.copy()
-        ################################################################################
-        # # inspiration from MultiNest: discard points with loss > l_max_prev
-        # # not useful since acceptance rate too low
-        # cond = (loss_survey <= l_max_prev)
-        # survey_params = survey_params[cond]
-        # loss_survey = loss_survey[cond]
-        # del cond
-        # gc.collect()
-        # if loss_survey.size:
-        ################################################################################
-        s_max = np.argmax(loss_survey)
-        s_min = np.argmin(loss_survey)
-        l_max = loss_survey.max()
-        l_min = loss_survey.min()
+    # ###########################################
+    # def adjust_survey_old(self,sp,ls):
+    #     """ One pass of updating param_mins,param_maxs. """
+    #     survey_params = sp.copy()
+    #     survey_loss = ls.copy()
+    #     ################################################################################
+    #     # # inspiration from MultiNest: discard points with loss > l_max_prev
+    #     # # not useful since acceptance rate too low
+    #     # cond = (survey_loss <= l_max_prev)
+    #     # survey_params = survey_params[cond]
+    #     # survey_loss = survey_loss[cond]
+    #     # del cond
+    #     # gc.collect()
+    #     # if survey_loss.size:
+    #     ################################################################################
+    #     s_max = np.argmax(survey_loss)
+    #     s_min = np.argmin(survey_loss)
+    #     l_max = survey_loss.max()
+    #     l_min = survey_loss.min()
         
-        # use 'Mahalonobis distance' a la MultiNest? easier to use current param range as proxy
+    #     # use 'Mahalonobis distance' a la MultiNest? easier to use current param range as proxy
 
-        # adjust survey by deleting outliers and decreasing param range
-        while loss_survey.size > 10: #0.1*self.N_survey: # make this user-adjustable?  
-            # iterate to find parameter direction along which current s_max is strongest outlier
-            positive = []
-            outliers = []
-            strengths = []
+    #     # adjust survey by deleting outliers and decreasing param range
+    #     while survey_loss.size > 10: #0.1*self.N_survey: # make this user-adjustable?  
+    #         # iterate to find parameter direction along which current s_max is strongest outlier
+    #         positive = []
+    #         outliers = []
+    #         strengths = []
             
-            # store current param ranges
-            param_range = [self.param_maxs[n] - self.param_mins[n] for n in range(self.n_params)]
+    #         # store current param ranges
+    #         param_range = [self.param_maxs[n] - self.param_mins[n] for n in range(self.n_params)]
             
-            # find all directions along which s_max is an outlier and record strengths
-            for n in np.arange(self.n_params):
-                all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n] # all param values along direction n, except s_max
-                par_max = 1.0*survey_params[s_max,n]
-                outlier_strength = np.fabs(par_max - survey_params[s_min,n])/param_range[n] # abs(max_loss_loc - min_loss_loc)/range
-                if np.all(par_max > all_but_smax):
-                    outliers.append(n)
-                    positive.append(1)
-                    strengths.append(outlier_strength)
-                if np.all(par_max < all_but_smax):
-                    outliers.append(n)
-                    positive.append(0)
-                    strengths.append(outlier_strength)
+    #         # find all directions along which s_max is an outlier and record strengths
+    #         for n in np.arange(self.n_params):
+    #             all_but_smax = survey_params[np.arange(survey_params.shape[0]) != s_max,n] # all param values along direction n, except s_max
+    #             par_max = 1.0*survey_params[s_max,n]
+    #             outlier_strength = np.fabs(par_max - survey_params[s_min,n])/param_range[n] # abs(max_loss_loc - min_loss_loc)/range
+    #             if np.all(par_max > all_but_smax):
+    #                 outliers.append(n)
+    #                 positive.append(1)
+    #                 strengths.append(outlier_strength)
+    #             if np.all(par_max < all_but_smax):
+    #                 outliers.append(n)
+    #                 positive.append(0)
+    #                 strengths.append(outlier_strength)
 
-            # determine strongest outlier direction and adjust its param range
-            if len(outliers) > 0:
-                o_max = np.argmax(strengths)
-                # print('n:',outliers[o_max],'; max-min:',l_max-l_min,
-                #       '; pos:',positive[o_max],'; value:',survey_params[s_max,outliers[o_max]])
-                if positive[o_max]:
-                    self.param_maxs[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
-                else:
-                    self.param_mins[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
-            else:
-                # worst loss needn't be outlier in any direction. in this case delete the point but don't adjust ranges.
-                pass
+    #         # determine strongest outlier direction and adjust its param range
+    #         if len(outliers) > 0:
+    #             o_max = np.argmax(strengths)
+    #             # print('n:',outliers[o_max],'; max-min:',l_max-l_min,
+    #             #       '; pos:',positive[o_max],'; value:',survey_params[s_max,outliers[o_max]])
+    #             if positive[o_max]:
+    #                 self.param_maxs[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
+    #             else:
+    #                 self.param_mins[outliers[o_max]] = survey_params[s_max,outliers[o_max]]
+    #         else:
+    #             # worst loss needn't be outlier in any direction. in this case delete the point but don't adjust ranges.
+    #             pass
         
-            # delete s_max
-            survey_params = np.delete(survey_params,s_max,axis=0)
-            loss_survey = np.delete(loss_survey,s_max)
-            # recalculate l_max,l_min,s_max,s_min
-            s_max = np.argmax(loss_survey)
-            s_min = np.argmin(loss_survey)
-            l_max = loss_survey.max()
-            l_min = loss_survey.min()
+    #         # delete s_max
+    #         survey_params = np.delete(survey_params,s_max,axis=0)
+    #         survey_loss = np.delete(survey_loss,s_max)
+    #         # recalculate l_max,l_min,s_max,s_min
+    #         s_max = np.argmax(survey_loss)
+    #         s_min = np.argmin(survey_loss)
+    #         l_max = survey_loss.max()
+    #         l_min = survey_loss.min()
             
-        if self.verbose:
-            self.print_this('... survey survivors = {0:d}'.format(loss_survey.size),self.logfile)
-        ################################################################################
-        ################################################################################
-        return 
-    ###########################################
+    #     if self.verbose:
+    #         self.print_this('... survey survivors = {0:d}'.format(survey_loss.size),self.logfile)
+    #     ################################################################################
+    #     ################################################################################
+    #     return 
+    # ###########################################
     
     ###########################################
     def distribute(self):
@@ -745,17 +740,22 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.check_after < 2:
             self.check_after = self.max_epoch + 1
             
+        # Think how to adjust lrate in response to large priors and n_params.
+        self.lrate = 0.2 # can be modified by self.adjust_survey()
+            
         if self.verbose:
             self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
             self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
             self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
             self.print_this('... ...       lrate = {0:.3f}'.format(self.lrate),self.logfile)
 
-        self.params_train = {'max_epoch':self.max_epoch,
-                             'mb_count':self.mb_count,
-                             'lrate':self.lrate,
-                             'loss_params':self.loss_params,
-                             'check_after':self.check_after}
+        self.params_train = []
+        for w in range(self.N_walker):
+            self.params_train.append({'max_epoch':self.max_epoch,
+                                      'mb_count':self.mb_count,
+                                      'lrate':self.lrate,
+                                      'loss_params':self.loss_params,
+                                      'check_after':self.check_after})
         self.distributed = 1
         return 
     ###########################################
@@ -774,7 +774,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('Climbing...',self.logfile)
 
         for w in range(self.N_walker):
-            self.walkers[w].train(params=self.params_train)
+            self.walkers[w].train(params=self.params_train[w])
             if self.verbose:
                 self.status_bar(w,self.N_walker)
         
