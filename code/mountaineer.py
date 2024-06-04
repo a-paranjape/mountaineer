@@ -766,6 +766,24 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.status_bar(w,self.N_walker)
         
         if self.verbose:
+            self.print_this('... setting final parameter ranges',self.logfile)
+        pmaxs = -np.inf*np.ones(self.n_params)
+        pmins = np.inf*np.ones(self.n_params)
+        for w in range(self.N_walker):
+            pmaxs = np.maximum(self.walkers[w].model.params.T[0],pmaxs)
+            pmins = np.minimum(self.walkers[w].model.params.T[0],pmins)
+        # now pmaxs,pmins respectively have largest,smallest values sampled by walkers in any direction
+        
+        self.param_maxs = np.minimum(pmaxs,self.param_maxs_old)
+        self.param_mins = np.maximum(pmins,self.param_mins_old)
+        # use pmaxs,pmins as bounds, without exceeding user-supplied ranges
+
+        if self.verbose:
+            prnt_str = '... final param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
+            prnt_str += '... final param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']'
+            self.print_this(prnt_str,self.logfile)
+        
+        if self.verbose:
             self.print_this('... done',self.logfile)
 
         return
