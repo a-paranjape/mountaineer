@@ -552,7 +552,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this(prnt_str,self.logfile)
             self.print_this('... writing to file: '+self.range_file,self.logfile)
         with open(self.range_file,'w') as f:
-            f.write('# p_min | p_max')
+            f.write('# p_min | p_max\n')
         for p in range(self.n_params):
             self.write_to_file(self.range_file,[self.param_mins[p],self.param_maxs[p]])
             
