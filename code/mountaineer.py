@@ -383,7 +383,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         # internally set
         self.N_survey = int(self.survey_frac*self.N_evals_max)
-        self.N_evals_max_walk = self.N_evals_max - self.N_survey*self.n_iter_survey
+        self.N_survey_tot = self.N_survey*self.n_iter_survey
+        self.N_evals_max_walk = self.N_evals_max - self.N_survey_tot
         self.N_walker = 3*self.n_params # ?? 10*(n_params/3)
         self.N_survey_lhc_layers = (self.N_survey // 2) + 1
         # min,max values of lrate
@@ -823,7 +824,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('Walks exist, nothing to write.',self.logfile)            
             
         # include survey first
-        steps = self.N_survey*self.n_iter_survey
+        steps = 1*self.N_survey_tot
         if not self.walks_exist:
             for s in range(steps):
                 self.write_to_file(self.walks_file,[self.survey_loss[s]] + [self.survey_params[s,d] for d in range(self.n_params)])
@@ -837,7 +838,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                         self.write_to_file(self.walks_file,list(walks[w][:,s]))
             
         if self.verbose:
-            self.print_this('... total steps taken = {0:d} (of which {1:d} were survey)'.format(steps,self.survey_params.shape[0]),self.logfile)
+            self.print_this('... total steps taken = {0:d} (of which {1:d} were survey)'.format(steps,self.N_survey_tot),self.logfile)
             self.print_this('... done',self.logfile)            
 
         return walks
