@@ -360,6 +360,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.survey_frac = data_pack.get('survey_frac',0.1)
         self.file_stem = data_pack.get('file_stem','walk')
         self.walks_file = self.file_stem + '_all.txt'
+        self.range_file = self.file_stem + '_ranges.txt'
         self.Model = data_pack.get('model',None)
         self.n_params = data_pack.get('n_params',None)
         self.param_mins = data_pack.get('param_mins',None)
@@ -420,7 +421,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))        
-        self.distributed = 0 # will be set to 1 (-1) upon (un)successful call to self.distribute().
+        self.distributed = 0 # will be set to 1 upon successful call to self.distribute().
         self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
 
         #######################
@@ -541,14 +542,19 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.survey_loss[i*self.N_survey:(i+1)*self.N_survey] = sloss[i]
 
         self.survey_params,idx = np.unique(self.survey_params,axis=0,return_index=True)
-        self.survey_loss = self.survey_loss[idx]
-
+        self.survey_loss = self.survey_loss[idx]        
+        
         if self.verbose:
             prnt_str = '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
             prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
             prnt_str += '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
             prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']'
             self.print_this(prnt_str,self.logfile)
+            self.print_this('... writing to file: '+self.range_file,self.logfile)
+        with open(self.range_file,'w') as f:
+            f.write('# p_min | p_max')
+        for p in range(self.n_params):
+            self.write_to_file(self.range_file,[self.param_mins[p],self.param_maxs[p]])
             
         return
     ###########################################
@@ -672,18 +678,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
     
     ###########################################
     def distribute(self):
-        """ Distribute available resources among walkers and set training parameters. 
-            Returns +1 for successful distribution and -1 if not enough walkers can be initialised.
-        """
+        """ Distribute available resources among walkers and set training parameters."""                    
         if self.walks_exist:
-            raise Exception('Walks exist! No distribution allowed.')
+            if self.verbose:
+                self.print_this('Setting up pre-existing walks and ranges...',self.logfile)
+            # expect self.range_file to be written already
+            ranges = np.loadtxt(self.range_file).T
+            self.param_mins = ranges[0].copy()
+            self.param_maxs = ranges[1].copy()
+        else:
+            if self.verbose:
+                self.print_this('Distributing available resources ({0:d} evals)...'.format(self.N_evals_max_walk),self.logfile)
         
-        if self.verbose:
-            self.print_this('Distributing available resources ({0:d} evals)...'.format(self.N_evals_max_walk),self.logfile)
-            
         if self.verbose:
             self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
-        
+            
         dp_walk = {'X':self.X,'Y':self.Y,'val_frac':self.val_frac,
                    'model':self.model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
                    'seed':self.seed,'verbose':False,'logfile':self.logfile}
@@ -693,34 +702,35 @@ class Mountaineer(Module,MLUtilities,Utilities):
                                                            param_mins=self.param_mins,param_maxs=self.param_maxs)
         for w in range(self.N_walker):
             dp_walk['file_stem'] = self.file_stem + '_w' + str(w+1)
-            dp_walk['params_init'] = pins[w:w+1,:].T
+            dp_walk['params_init'] = pins[w:w+1,:].T # values irrelevant if walks exist, but structure needed
             self.walkers.append(Walker(data_pack=dp_walk))
-            
-        if self.verbose:
-            self.print_this('... setting up training parameters',self.logfile)
-            
-        ####################
-        self.max_epoch = self.N_evals_max_walk // (self.N_walker*self.mb_count) # 30
-        self.check_after = self.max_epoch // 3
-        if self.check_after < 2:
-            self.check_after = self.max_epoch + 1
-            
-        ####################
-        self.set_lrates()
-            
-        if self.verbose:
-            self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
-            self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
-            self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
-            self.print_this('... ...      lrates = {0:.3f} to {1:.3f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
 
-        self.params_train = []
-        for w in range(self.N_walker):
-            self.params_train.append({'max_epoch':self.max_epoch,
-                                      'mb_count':self.mb_count,
-                                      'lrate':self.lrates[w],
-                                      'loss_params':self.loss_params,
-                                      'check_after':self.check_after})
+        if not self.walks_exist:
+            if self.verbose:
+                self.print_this('... setting up training parameters',self.logfile)
+
+            ####################
+            self.max_epoch = self.N_evals_max_walk // (self.N_walker*self.mb_count) # 30
+            self.check_after = self.max_epoch // 3
+            if self.check_after < 2:
+                self.check_after = self.max_epoch + 1
+
+            ####################
+            self.set_lrates()
+
+            if self.verbose:
+                self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
+                self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
+                self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
+                self.print_this('... ...      lrates = {0:.3f} to {1:.3f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
+
+            self.params_train = []
+            for w in range(self.N_walker):
+                self.params_train.append({'max_epoch':self.max_epoch,
+                                          'mb_count':self.mb_count,
+                                          'lrate':self.lrates[w],
+                                          'loss_params':self.loss_params,
+                                          'check_after':self.check_after})
         self.distributed = 1
         return 
     ###########################################
@@ -754,8 +764,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             raise Exception('Walks exist! No climbing allowed.')
         if self.distributed == 0:
             raise Exception('Distribution not done! No climbing allowed.')
-        if self.distributed == -1:
-            raise Exception('Distribution not successful! No climbing allowed.')
         
         if self.verbose:
             self.print_this('Climbing...',self.logfile)
@@ -798,6 +806,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             Returns: 
             -- walks: list of arrays, each element is output of Walker.load() [can be fed to visualize().]
         """
+        if self.walks_exist:
+            self.distribute() # this will initialise Walker instances with correct file stem
+            
         walks = []
         for w in self.walkers:
             walks.append(w.load())
@@ -812,7 +823,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('Walks exist, nothing to write.',self.logfile)            
             
         # include survey first
-        steps = self.survey_params.shape[0]
+        steps = self.N_survey*self.n_iter_survey
         if not self.walks_exist:
             for s in range(steps):
                 self.write_to_file(self.walks_file,[self.survey_loss[s]] + [self.survey_params[s,d] for d in range(self.n_params)])
