@@ -551,11 +551,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             prnt_str += '... old param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs_old]) +']\n'
             prnt_str += '... ... modified to = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']'
             self.print_this(prnt_str,self.logfile)
-            self.print_this('... writing to file: '+self.range_file,self.logfile)
-        with open(self.range_file,'w') as f:
-            f.write('# p_min | p_max\n')
-        for p in range(self.n_params):
-            self.write_to_file(self.range_file,[self.param_mins[p],self.param_maxs[p]])
             
         return
     ###########################################
@@ -794,6 +789,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
             prnt_str = '... final param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
             prnt_str += '... final param_maxs  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_maxs]) +']'
             self.print_this(prnt_str,self.logfile)
+            self.print_this('... writing to file: '+self.range_file,self.logfile)
+        with open(self.range_file,'w') as f:
+            f.write('# p_min | p_max\n')
+        for p in range(self.n_params):
+            self.write_to_file(self.range_file,[self.param_mins[p],self.param_maxs[p]])
         
         if self.verbose:
             self.print_this('... done',self.logfile)
