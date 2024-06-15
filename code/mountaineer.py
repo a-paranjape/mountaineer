@@ -521,7 +521,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         sparam = []
         sloss = []
         for i in range(self.n_iter_survey):
-            self.print_this('... iteration {0:d}'.format(i+1),self.logfile)
+            if self.verbose:
+                self.print_this('... iteration {0:d}'.format(i+1),self.logfile)
             # below two will create and share self.survey_{params,lhc_layers,loss,dLdtheta} arrays, of which params and loss will be stored
             self.create_survey(model_survey)
             self.adjust_survey()
