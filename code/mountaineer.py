@@ -346,7 +346,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'logfile': None or str, file into which to print output (default None, print to stdout)
 
             ** passed to Walker.train() calls **
-            -- 'lrate': float, SGD learning rate. Default 0.1. # CAN THIS BE NON-DIMENSIONALISED?
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
                               E.g. for Chi2 this would be 'cov_mat' containing covariance matrix of *full* data set.
 
