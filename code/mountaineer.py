@@ -203,12 +203,21 @@ class Walker(Module,MLUtilities,Utilities):
             Ypred_val = self.model.forward(self.X_val) # update activations. prediction for validation data
             self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
             if t > check_after:
-                chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
-                chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
-                if chk_half & chk:
+                x = np.arange(t-check_after,t+1)
+                y = self.val_loss[x].copy()
+                # xbar = np.mean(x)
+                # slope = (np.mean(x*y)-xbar*np.mean(y))/(np.mean(x**2) - xbar**2 + 1e-15) # best fit slope
+                if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
                     if self.verbose:
                         self.print_this('',self.logfile)
                     break
+            # if t > check_after:
+            #     chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
+            #     chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
+            #     if chk_half & chk:
+            #         if self.verbose:
+            #             self.print_this('',self.logfile)
+            #         break
                 
             if self.verbose:
                 self.status_bar(t,max_epoch)
