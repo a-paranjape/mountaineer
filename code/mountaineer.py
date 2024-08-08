@@ -570,7 +570,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... creating survey',self.logfile)
         survey_params,survey_lhc_layers = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,return_layers=True,
-                                                            param_mins=self.param_mins,param_maxs=self.param_maxs)
+                                                                   param_mins=self.param_mins,param_maxs=self.param_maxs)
         # survey_params has shape (N_survey,n_params)
         #        layers ..  ..    (Nsurvey,)
         
@@ -647,7 +647,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             points = np.where(self.survey_lhc_layers == l)[0]
             # points.size guaranteed positive due to LHC construction
             if points.size:
-                # condition to proceed to next layer: vol-avg div(loss) > 0, over vol enclosed by layer
+                # condition to proceed to next layer: vol_avg div(grad loss) > 0, over vol enclosed by layer
                 div_loss = 0.0 # collect contribution from each point on layer.
                 for p in range(points.size):
                     max_dims = np.where(np.fabs(self.survey_params[points[p]] - max_layer) < 0.1*Dp)[0] 
@@ -660,7 +660,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 # note loss ~ -ln(likelihood). we want likelihood grads pointed inwards, hence loss grads pointed outwards.
                 if div_loss < 0.0:
                     if self.verbose:
-                        self.print_this('... ... avg div(loss) negative at layer {0:d}; breaking.'.format(l),self.logfile)
+                        self.print_this('... ... avg div(grad loss) negative at layer {0:d}; breaking.'.format(l),self.logfile)
                     break
                 # else proceed to next layer
             
@@ -783,16 +783,17 @@ class Mountaineer(Module,MLUtilities,Utilities):
         pmaxs = -np.inf*np.ones(self.n_params)
         pmins = np.inf*np.ones(self.n_params)
         for w in range(self.N_walker):
-            pmaxs = np.maximum(self.walkers[w].model.params.T[0],pmaxs)
-            pmins = np.minimum(self.walkers[w].model.params.T[0],pmins)
-        # now pmaxs,pmins respectively have largest,smallest values sampled by walkers in any direction
+            params_w = self.walkers[w].load()[1:,:] # shape (n_params,n_steps)
+            cond_nan = np.isnan(np.sum(params_w,axis=0))
+            params_w = params_w.T[~cond_nan] # keep only those steps where all params are non-NaN
+            params_w_max = np.max(params_w,axis=0) # (n_params,)
+            params_w_min = np.min(params_w,axis=0) # (n_params,)
+            pmaxs = np.maximum(params_w_max,pmaxs)
+            pmins = np.minimum(params_w_min,pmins)
+        # now pmaxs,pmins respectively have largest,smallest non-NaN values sampled by walkers in any direction
         
         self.param_maxs = np.maximum(pmaxs,self.param_maxs)
         self.param_mins = np.minimum(pmins,self.param_mins)
-        
-        self.param_maxs = np.minimum(self.param_maxs,self.param_maxs_old)
-        self.param_mins = np.maximum(self.param_mins,self.param_mins_old)
-        # use pmaxs,pmins as bounds, without exceeding user-supplied ranges
 
         if self.verbose:
             prnt_str = '... final param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
@@ -875,7 +876,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.cols = iter(plt.cm.Spectral_r(np.linspace(0,1,self.N_walker)))
 
         cols = copy.deepcopy(self.cols)
-        plt.figure(figsize=(5,5))
+        plt.figure(figsize=(3,3))
         plt.xlabel('x')
         plt.ylabel('y')
         errors = np.sqrt(np.diag(self.loss_params['cov_mat']))
@@ -889,7 +890,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         plt.show()
 
         cols = copy.deepcopy(self.cols)
-        fig,ax1 = plt.subplots(figsize=(5,5))
+        fig,ax1 = plt.subplots(figsize=(3,3))
         ax1.set_yscale('log')
         ax1.set_ylim(0.1,1e5)
         ax1.set_xlabel('step')
@@ -913,16 +914,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
         for pi in range(self.n_params-1):
             for pj in range(pi+1,self.n_params):
                 cols = copy.deepcopy(self.cols)
-                plt.figure(figsize=(5,5))
+                plt.figure(figsize=(3,3))
                 plt.xlabel('$a_{{{0:d}}}$'.format(pi))
                 plt.ylabel('$a_{{{0:d}}}$'.format(pj))
-                xmin,xmax = self.param_mins[pi],self.param_maxs[pi]
-                xmin -= 0.1*np.fabs(xmin)
-                xmax += 0.1*np.fabs(xmax)
+                dpx = self.param_maxs[pi]-self.param_mins[pi]
+                xmin,xmax = self.param_mins[pi]-0.05*dpx,self.param_maxs[pi]+0.05*dpx
                 plt.xlim(xmin,xmax)
-                ymin,ymax = self.param_mins[pj],self.param_maxs[pj]
-                ymin -= 0.1*np.fabs(ymin)
-                ymax += 0.1*np.fabs(ymax)
+                dpy = self.param_maxs[pj]-self.param_mins[pj]
+                ymin,ymax = self.param_mins[pj]-0.05*dpy,self.param_maxs[pj]+0.05*dpy
                 plt.ylim(ymin,ymax)
                 for w in range(self.N_walker):
                     col = next(cols)
