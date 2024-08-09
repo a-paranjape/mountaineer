@@ -1001,20 +1001,20 @@ likelihood:
 params:
   a0:
     ref:
-      min: 0.999
-      max: 1.001
+      min: 1.01070755
+      max: 1.0127075499999998
     prior:
-      min: 0.5
-      max: 1.5
+      min: 0.4611111
+      max: 1.562304
     proposal: 0.01
     latex: a_{0}
   a1:
     ref:
-      min: 1.499
-      max: 1.501
+      min: 1.5709349500000003
+      max: 1.57293495
     prior:
-      min: 1.0
-      max: 2.0
+      min: 0.9059419
+      max: 2.237928
     proposal: 0.01
     latex: a_{1}
   a2:

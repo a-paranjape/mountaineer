@@ -1,0 +1,52 @@
+theory:
+  likelihoods.GPRTheory:
+    python_path: ../code/likes/
+    gprt: true
+    interpolator: true
+    keys:
+    - A1
+    - mu1
+    - lnsig21
+likelihood:
+  likelihoods.EmulLike:
+    python_path: ../code/likes/
+params:
+  A1:
+    ref:
+      min: -1.5010001666666666
+      max: -1.4990001666666668
+    prior:
+      min: -3.046667
+      max: 0.046666666666666634
+    proposal: 0.01
+    latex: A_{1}
+  mu1:
+    ref:
+      min: -1.517572
+      max: -1.5155720000000001
+    prior:
+      min: -3.523144
+      max: 0.49
+    proposal: 0.01
+    latex: \mu_{1}
+  lnsig21:
+    ref:
+      min: -0.24126649999999994
+      max: -0.23926649999999994
+    prior:
+      min: -2.676942
+      max: 2.196409
+    proposal: 0.01
+    latex: \ln(\sigma^{2}_{1})
+sampler:
+  mcmc:
+    learn_proposal: true
+    Rminus1_single_split: 4
+    measure_speeds: true
+    max_samples: 1000000
+    max_tries: 1000
+    Rminus1_stop: 0.01
+    Rminus1_cl_stop: 0.05
+    Rminus1_cl_level: 0.95
+    burn_in: 0
+output: gm1c_lgNmax3.48_gpr
