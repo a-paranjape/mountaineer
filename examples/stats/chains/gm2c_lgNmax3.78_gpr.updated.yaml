@@ -1,0 +1,128 @@
+theory:
+  likelihoods.GPRTheory:
+    gprt: true
+    interpolator: true
+    keys:
+    - A1
+    - mu1
+    - lnsig21
+    - A2
+    - mu2
+    - lnsig22
+    speed: -1
+    stop_at_error: false
+    version: null
+    python_path: ../code/likes/
+    input_params:
+    - A1
+    - mu1
+    - lnsig21
+    - A2
+    - mu2
+    - lnsig22
+    output_params: []
+likelihood:
+  likelihoods.EmulLike:
+    type: []
+    speed: -1
+    stop_at_error: false
+    version: null
+    python_path: ../code/likes/
+    input_params: []
+    output_params: []
+params:
+  A1:
+    ref:
+      min: -1.40233375
+      max: -1.4003337500000002
+    prior:
+      min: -3.166667
+      max: 0.3639995
+    proposal: 0.01
+    latex: A_{1}
+  mu1:
+    ref:
+      min: -1.8300410499999997
+      max: -1.82804105
+    prior:
+      min: -4.551269
+      max: 0.8931869
+    proposal: 0.01
+    latex: \mu_{1}
+  lnsig21:
+    ref:
+      min: -0.0444190000000001
+      max: -0.042419000000000096
+    prior:
+      min: -3.010126
+      max: 2.923288
+    proposal: 0.01
+    latex: \ln(\sigma^{2}_{1})
+  A2:
+    ref:
+      min: 1.810472415
+      max: 1.8124724149999998
+    prior:
+      min: -0.04372217
+      max: 3.666667
+    proposal: 0.01
+    latex: A_{2}
+  mu2:
+    ref:
+      min: 0.8965375
+      max: 0.8985375
+    prior:
+      min: -1.371592
+      max: 3.166667
+    proposal: 0.01
+    latex: \mu_{2}
+  lnsig22:
+    ref:
+      min: -2.3302486
+      max: -2.3282486000000002
+    prior:
+      min: -5.248786
+      max: 0.5902888
+    proposal: 0.01
+    latex: \ln(\sigma^{2}_{2})
+sampler:
+  mcmc:
+    burn_in: 0
+    max_tries: 1000
+    covmat: null
+    covmat_params: null
+    proposal_scale: 2.4
+    output_every: 60s
+    learn_every: 40d
+    temperature: 1
+    learn_proposal: true
+    learn_proposal_Rminus1_max: 2.0
+    learn_proposal_Rminus1_max_early: 30.0
+    learn_proposal_Rminus1_min: 0.0
+    max_samples: 1000000
+    Rminus1_stop: 0.01
+    Rminus1_cl_stop: 0.05
+    Rminus1_cl_level: 0.95
+    Rminus1_single_split: 4
+    measure_speeds: true
+    oversample_power: 0.4
+    oversample_thin: true
+    drag: false
+    blocking:
+    - - 1
+      - - A1
+        - mu1
+        - lnsig21
+        - A2
+        - mu2
+        - lnsig22
+    callback_function: null
+    callback_every: null
+    seed: null
+    check_every: null
+    oversample: null
+    drag_limits: null
+    fallback_covmat_scale: 4
+    version: 3.5.1
+output: gm2c_lgNmax3.78_gpr
+version: 3.5.1
