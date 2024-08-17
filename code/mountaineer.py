@@ -336,13 +336,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'n_params': int, number of parameters in model.
             -- 'param_mins','param_maxs': array-likes of floats (n_params,) - guesses for minimum and maximum values for parameters 
             
-            ## Adam params will eventually be hidden ##
-            -- 'adam': bool, whether or not to implement adam support. ** Strongly recommend True. **
-            -- 'B1_adam': float, adam parameter for momentum. Default 0.9.
-            -- 'B2_adam': float, adam parameter for adadelta. Default 0.999.
-            -- 'eps_adam': float, adam parameter for zero-division safety. Default 1e-8.
-            ##
-
             ** passed to Walker instances **
             -- 'X': array of X [control variable] (1,n_samp)
             -- 'Y': array of Y [target] (1,n_samp)
@@ -398,12 +391,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # min,max values of lrate
         self.lrate_min = 0.15
         self.lrate_max = 0.15 # will be changed by self.set_lrates()
+        self.lrate_largest_max = 0.25
         
-        # adam setup
-        self.adam = data_pack.get('adam',True)
-        self.B1_adam = data_pack.get('B1_adam',0.9)
-        self.B2_adam = data_pack.get('B2_adam',0.999)
-        self.eps_adam = data_pack.get('eps_adam',1e-8)
+        # # adam setup
+        # self.adam = data_pack.get('adam',True)
+        # self.B1_adam = data_pack.get('B1_adam',0.9)
+        # self.B2_adam = data_pack.get('B2_adam',0.999)
+        # self.eps_adam = data_pack.get('eps_adam',1e-8)
+        
+        # array of adam parameter values for different walkers.
+        # will be set by self.set_adams() called by self.distribute()
+        self.B1_adams = None
+        self.B2_adams = None
+        # min,max values
+        self.B1_adam_min,self.B1_adam_max = 0.75,0.9 # (default 0.9) 0.75,0.9
+        self.B2_adam_min,self.B2_adam_max = 0.75,(1-1e-6) # (default 0.999) 0.75,1-1e-6
 
         self.X = data_pack.get('X',None)
         self.Y = data_pack.get('Y',None)
@@ -413,8 +415,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_mins = np.array(self.param_mins)
         self.param_maxs = np.array(self.param_maxs)
         
-        self.model_inst = self.Model(n_params=self.n_params,adam=self.adam,
-                                     B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
+        self.model_inst = self.Model(n_params=self.n_params)#,adam=self.adam,
+                                     # B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
         
         self.val_frac = data_pack.get('val_frac',0.2) # fraction of input data to use for validation
         
@@ -588,10 +590,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
-            Ypred = model_survey.forward(self.X)
+            Ypred = model_survey.forward(self.X) 
             survey_loss[s] = loss.forward(Ypred)
             dLdm = loss.backward()
-            model_survey.backward(dLdm)
+            model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
             survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
@@ -627,7 +629,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... adjusting survey',self.logfile)
             
         Dp = (self.param_maxs - self.param_mins)/self.N_survey
-        # np.array([self.param_maxs[d] - self.param_mins[d] for d in range(self.n_params)])/self.N_survey
         # Dp[d] = division size in direction d
                 
         if self.verbose:
@@ -641,14 +642,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # average divergence of loss
         for l in range(self.N_survey_lhc_layers):
             # locations of max and min values in layer along each direction
-            max_layer = self.param_maxs - l*Dp #np.array([self.param_maxs[d] - l*Dp[d] for d in range(self.n_params)]) 
-            min_layer = self.param_mins + l*Dp #np.array([self.param_mins[d] + l*Dp[d] for d in range(self.n_params)]) 
+            max_layer = self.param_maxs - l*Dp
+            min_layer = self.param_mins + l*Dp
             # indices of survey points in layer
             points = np.where(self.survey_lhc_layers == l)[0]
             # points.size guaranteed positive due to LHC construction
             if points.size:
                 # condition to proceed to next layer: vol_avg div(grad loss) > 0, over vol enclosed by layer
-                div_loss = 0.0 # collect contribution from each point on layer.
+                div_grad_loss = 0.0 # collect contribution from each point on layer.
                 for p in range(points.size):
                     max_dims = np.where(np.fabs(self.survey_params[points[p]] - max_layer) < 0.1*Dp)[0] 
                     min_dims = np.where(np.fabs(self.survey_params[points[p]] - min_layer) < 0.1*Dp)[0]
@@ -656,9 +657,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     nhat[max_dims] = 1.0
                     nhat[min_dims] = -1.0
                     nhat /= np.sqrt(np.sum(nhat**2))
-                    div_loss += np.dot(self.survey_dLdtheta[points[p]],nhat*dArea)
+                    div_grad_loss += np.dot(self.survey_dLdtheta[points[p]],nhat*dArea)
                 # note loss ~ -ln(likelihood). we want likelihood grads pointed inwards, hence loss grads pointed outwards.
-                if div_loss < 0.0:
+                if div_grad_loss < 0.0:
                     if self.verbose:
                         self.print_this('... ... avg div(grad loss) negative at layer {0:d}; breaking.'.format(l),self.logfile)
                     break
@@ -670,9 +671,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('... ... adjusting parameter ranges',self.logfile)
             self.param_maxs -= l_stay*Dp
             self.param_mins += l_stay*Dp
-            # for d in range(self.n_params):
-            #     self.param_maxs[d] -= l_stay*Dp[d]
-            #     self.param_mins[d] += l_stay*Dp[d]
         else:
             # if we sailed thru then probably no change was ever needed!
             if self.verbose:
@@ -699,15 +697,20 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
             
         dp_walk = {'X':self.X,'Y':self.Y,'val_frac':self.val_frac,
-                   'model':self.model_inst,'loss':self.loss_module,'walks_exist':self.walks_exist,
+                   'model':copy.deepcopy(self.model_inst), # copying since adam needs adjustment. ** can we avoid copying? **
+                   'loss':self.loss_module,'walks_exist':self.walks_exist,
                    'seed':self.seed,'verbose':False,'logfile':self.logfile}
 
         self.walkers = []
         pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
                                                            param_mins=self.param_mins,param_maxs=self.param_maxs)
+        self.set_adams() # will set self.B1_adams,self.B2_adams
+        
         for w in range(self.N_walker):
             dp_walk['file_stem'] = self.file_stem + '_w' + str(w+1)
             dp_walk['params_init'] = pins[w:w+1,:].T # values irrelevant if walks exist, but structure needed
+            dp_walk['model'].B1_adam = self.B1_adams[w]
+            dp_walk['model'].B2_adam = self.B2_adams[w]
             self.walkers.append(Walker(data_pack=dp_walk))
 
         if not self.walks_exist:
@@ -727,7 +730,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
                 self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
                 self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
-                self.print_this('... ...      lrates = {0:.3f} to {1:.3f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
+                self.print_this('... ...      lrates = {0:.4f} to {1:.4f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
+                self.print_this('... ...  1-B1_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B1_adams.max(),1-self.B1_adams.min()),self.logfile)
+                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.max(),1-self.B2_adams.min()),self.logfile)
 
             self.params_train = []
             for w in range(self.N_walker):
@@ -736,8 +741,29 @@ class Mountaineer(Module,MLUtilities,Utilities):
                                           'lrate':self.lrates[w],
                                           'loss_params':self.loss_params,
                                           'check_after':self.check_after})
+        ##############        
+        # DO SANITY CHECK ON VALUES OF B1_ADAM, B2_ADAM and LRATE FOR EACH WALKER
+        ##############
+        
         self.distributed = 1
         return 
+    ###########################################
+
+    ###########################################
+    def set_adams(self):
+        """ Set adam parameters B1 and B2 for each walker based on its LHC layer, 
+            with outer layers having larger values of B1,B2 to make walks more ridge-directed. 
+        """
+        if self.N_walker is None:
+            raise Exception('set_adams() can only be called within or after distribute() in Mountaineer.')
+        B1_vals = np.linspace(self.B1_adam_max,self.B1_adam_min,self.walker_layers.max()+1)
+        B2_vals = np.linspace(self.B2_adam_max,self.B2_adam_min,self.walker_layers.max()+1)
+        self.B1_adams = np.zeros(self.N_walker)
+        self.B2_adams = np.zeros(self.N_walker)
+        for w in range(self.N_walker):
+            self.B1_adams[w] = B1_vals[self.walker_layers[w]]
+            self.B2_adams[w] = B2_vals[self.walker_layers[w]]
+        return
     ###########################################
 
     ###########################################
@@ -751,11 +777,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
         changes_pmins = np.fabs(self.param_mins - self.param_mins_old)/ranges
         # above are changes in maxs,mins, relative to old ranges
         max_rel_change = np.max([changes_pmaxs.max(),changes_pmins.max()]) # largest relative change
-        self.lrate_max = np.min([0.25,self.lrate_max*(1+max_rel_change)])
+        self.lrate_max = np.min([self.lrate_largest_max,self.lrate_max*(1+max_rel_change)])
         self.lrate_max = np.max([self.lrate_min,self.lrate_max])
         
         lrate_vals = np.linspace(self.lrate_max,self.lrate_min,self.walker_layers.max()+1)
-        # linearly change from min (default 0.1) to max (default 0.2) from layer = walker_layers.max()+1 to 0
+        # linearly change from min (default 0.15) to max (minimum 0.25) from layer = walker_layers.max()+1 to 0
         self.lrates = np.zeros(self.N_walker)
         for w in range(self.N_walker):
             self.lrates[w] = lrate_vals[self.walker_layers[w]]
@@ -836,6 +862,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # include survey first
         steps = 1*self.N_survey_tot
         if not self.walks_exist:
+            # NEED TO CHK INTERMITTENT ERR DUE TO MISSING ELEMENTS
             for s in range(steps):
                 self.write_to_file(self.walks_file,[self.survey_loss[s]] + [self.survey_params[s,d] for d in range(self.n_params)])
         

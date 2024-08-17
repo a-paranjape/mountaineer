@@ -1,6 +1,6 @@
 sampler:
   mcmc:
     converged: true
-    Rminus1_last: 0.007032324047491713
+    Rminus1_last: 0.0050278371930074115
     burn_in: 0
     mpi_size: 1

@@ -32,56 +32,56 @@ likelihood:
 params:
   A1:
     ref:
-      min: -1.001
-      max: -0.999
+      min: -1.14005005
+      max: -1.1380500500000001
     prior:
-      min: -1.5
-      max: -0.5
+      min: -1.861111
+      max: -0.4169891
     proposal: 0.01
     latex: A_{1}
   mu1:
     ref:
-      min: -0.751
-      max: -0.749
+      min: -0.8482371000000001
+      max: -0.8462371000000001
     prior:
-      min: -1.5
-      max: 0.0
+      min: -1.951982
+      max: 0.2575078
     proposal: 0.01
     latex: \mu_{1}
   lnsig21:
     ref:
-      min: -1.0611317
-      max: -1.0591317000000002
+      min: -0.8105934
+      max: -0.8085934
     prior:
-      min: -2.302585
-      max: 0.1823216
+      min: -2.237117
+      max: 0.6179302
     proposal: 0.01
     latex: \ln(\sigma^{2}_{1})
   A2:
     ref:
-      min: 1.999
-      max: 2.001
+      min: 1.98982225
+      max: 1.9918222499999998
     prior:
-      min: 1.0
-      max: 3.0
+      min: 0.9388075
+      max: 3.042837
     proposal: 0.01
     latex: A_{2}
   mu2:
     ref:
-      min: 1.249
-      max: 1.251
+      min: 1.03043115
+      max: 1.0324311499999999
     prior:
-      min: 0.5
-      max: 2.0
+      min: 0.3333333
+      max: 1.729529
     proposal: 0.01
     latex: \mu_{2}
   lnsig22:
     ref:
-      min: -1.6104377999999997
-      max: -1.6084378
+      min: -1.5202929499999998
+      max: -1.51829295
     prior:
-      min: -2.995732
-      max: -0.2231436
+      min: -2.597612
+      max: -0.4409739
     proposal: 0.01
     latex: \ln(\sigma^{2}_{2})
 sampler:
