@@ -384,21 +384,15 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         # internally set
         self.N_survey = int(self.survey_frac*self.N_evals_max)
-        self.N_survey_tot = self.N_survey*self.n_iter_survey
+        self.N_survey_tot = self.N_survey*self.n_iter_survey # will be updated to actual number in self.survey()
         self.N_evals_max_walk = self.N_evals_max - self.N_survey_tot
-        self.N_walker = 3*self.n_params # ?? 10*(n_params/3)
+        self.N_walker = 3*self.n_params 
         self.N_survey_lhc_layers = (self.N_survey // 2) + 1
         # min,max values of lrate
         self.lrate_min = 0.15
         self.lrate_max = 0.15 # will be changed by self.set_lrates()
         self.lrate_largest_max = 0.25
-        
-        # # adam setup
-        # self.adam = data_pack.get('adam',True)
-        # self.B1_adam = data_pack.get('B1_adam',0.9)
-        # self.B2_adam = data_pack.get('B2_adam',0.999)
-        # self.eps_adam = data_pack.get('eps_adam',1e-8)
-        
+                
         # array of adam parameter values for different walkers.
         # will be set by self.set_adams() called by self.distribute()
         self.B1_adams = None
@@ -547,14 +541,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
         
-        self.survey_params = np.zeros((self.N_survey*self.n_iter_survey,self.n_params))
-        self.survey_loss = np.zeros(self.N_survey*self.n_iter_survey)
+        self.survey_params = np.zeros((self.N_survey_tot,self.n_params))
+        self.survey_loss = np.zeros(self.N_survey_tot)
         for i in range(self.n_iter_survey):
             self.survey_params[i*self.N_survey:(i+1)*self.N_survey,:] = sparam[i]
             self.survey_loss[i*self.N_survey:(i+1)*self.N_survey] = sloss[i]
 
         self.survey_params,idx = np.unique(self.survey_params,axis=0,return_index=True)
-        self.survey_loss = self.survey_loss[idx]        
+        self.survey_loss = self.survey_loss[idx]
+        if self.survey_loss.size != self.N_survey_tot:
+            if self.verbose:
+                self.print_this('... eliminated {0:d} repeated param vectors'.format(self.N_survey_tot-self.survey_loss.size),self.logfile)                
+        self.N_survey_tot = self.survey_loss.size
         
         if self.verbose:
             prnt_str = '... old param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins_old]) +']\n'
@@ -820,6 +818,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
         
         self.param_maxs = np.maximum(pmaxs,self.param_maxs)
         self.param_mins = np.minimum(pmins,self.param_mins)
+        
+        # don't exceed original user-specified ranges
+        self.param_maxs = np.minimum(self.param_maxs_old,self.param_maxs)
+        self.param_mins = np.maximum(self.param_mins_old,self.param_mins)
 
         if self.verbose:
             prnt_str = '... final param_mins  = ['+','.join(['{0:.2e}'.format(p) for p in self.param_mins]) +']\n'
@@ -862,7 +864,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # include survey first
         steps = 1*self.N_survey_tot
         if not self.walks_exist:
-            # NEED TO CHK INTERMITTENT ERR DUE TO MISSING ELEMENTS
             for s in range(steps):
                 self.write_to_file(self.walks_file,[self.survey_loss[s]] + [self.survey_params[s,d] for d in range(self.n_params)])
         
@@ -894,13 +895,17 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
     def visualize(self,walks):
         """ Visualize each walk. Expect walks to be output of self.gather(). """
-        if self.distribute == -1:
+        if self.distributed != 1:
             raise Exception("Exploration seems to have failed. Can't visualize non-existent walks!")
         
         if self.verbose:
             self.print_this('Visualizing...',self.logfile)
             self.print_this('... setting up visualization colors',self.logfile)
         self.cols = iter(plt.cm.Spectral_r(np.linspace(0,1,self.N_walker)))
+
+        data = self.load()
+        survey = data[:,:self.N_survey_tot].copy()
+        survey = survey[1:,:] # (n_params,N_survey_tot)
 
         cols = copy.deepcopy(self.cols)
         plt.figure(figsize=(3,3))
@@ -953,6 +958,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 for w in range(self.N_walker):
                     col = next(cols)
                     plt.plot(walks[w][pi+1],walks[w][pj+1],ls='-',color=col,marker='o',markersize=3,lw=1)
+                plt.scatter(survey[pi],survey[pj],marker='*',s=1,c='gray')
                 plt.show()
 
         return
