@@ -1,0 +1,119 @@
+likelihood:
+  fb_joint_LF_QHI:
+    external: true
+    input_params:
+    - lsum
+    - ldiff
+    - l2
+    - l3
+    - asum
+    - adiff
+    - log10_fesc10
+    - alpha_esc
+    - log10Mcrit
+    output_params:
+    - tau_e
+    - twolone
+    - twoaone
+    - l0
+    - l1
+    - a0
+    - a1
+params:
+  lsum:
+    prior:
+      min: -2.0
+      max: 2.0
+    ref: -0.19
+    proposal: 0.01
+    latex: \ell_{\varepsilon,0} + \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  ldiff:
+    prior:
+      min: -2.0
+      max: 1.0
+    ref: -0.92
+    proposal: 0.01
+    latex: \ell_{\varepsilon,0} - \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  l2:
+    prior:
+      min: 8.0
+      max: 18.0
+    ref: 13.0
+    proposal: 0.01
+    latex: z_\ast
+  l3:
+    prior:
+      min: 0.5
+      max: 6.0
+    ref: 2.1
+    proposal: 0.01
+    latex: \Delta z_\ast
+  asum:
+    prior:
+      min: 0.0
+      max: 7.0
+    ref: 4.97
+    proposal: 0.01
+    latex: \alpha_0 + \dfrac{\alpha_\mathrm{jump}}{2}
+  adiff:
+    prior:
+      min: 0.0
+      max: 1.0
+    ref: 0.34
+    proposal: 0.01
+    latex: \alpha_0 - \dfrac{\alpha_\mathrm{jump}}{2}
+  log10_fesc10:
+    prior:
+      min: -3.0
+      max: 1.0
+    ref: -0.97
+    proposal: 0.01
+    latex: \log_{10}~(\varepsilon_{\mathrm{esc,10}})
+  alpha_esc:
+    prior:
+      min: -3.0
+      max: 1.0
+    ref: -0.41
+    proposal: 0.01
+    latex: \alpha_{esc}
+  log10Mcrit:
+    prior:
+      min: 9.0
+      max: 11.0
+    ref: 9.32
+    proposal: 0.01
+    latex: \log_{10}~M_{\mathrm{crit}}
+  tau_e:
+    min: 0.0
+    max: .inf
+    latex: \tau_{el}
+  twolone:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,\mathrm{jump}}
+  twoaone:
+    min: -.inf
+    max: .inf
+    latex: \alpha_\mathrm{jump}
+  l0:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,0}
+  l1:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,\mathrm{jump}} / 2
+  a0:
+    min: -.inf
+    max: .inf
+    latex: \alpha_0
+  a1:
+    min: -.inf
+    max: .inf
+    latex: \alpha_\mathrm{jump} / 2
+sampler:
+  mcmc:
+    Rminus1_stop: 0.01
+    max_tries: 10000
+    Rminus1_cl_stop: 0.1
+output: reion_uvlf_9p

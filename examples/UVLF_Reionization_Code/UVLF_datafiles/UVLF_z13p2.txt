@@ -1,0 +1,8 @@
+## from Table 6 of Donnan et al 2023  https://doi.org/10.1093/mnras/stac3472, of Bouwens et al 2023a https://doi.org/10.1093/mnras/stad1014 and McLeod+24 https://doi.org/10.1093/mnras/stad3471
+## M_{UV,AB} phi (Mpc^-3 mag^-1) err_phi (Mpc^-3 mag^-1)
+McLeod24 -18.95 0.00006199 +0.00003974 -0.00003974
+Donnan23a -19.00 0.0000274 +0.0000217 -0.0000131
+McLeod24 -19.45 0.00002469 +0.00001659 -0.00001659
+Bouwens23a -19.96 0.000032 +0.000032 -0.000032
+Donnan23a -20.35 0.0000103 +0.00000998 -0.00000559
+Bouwens23a -20.96 0.000010 +0.000008 -0.000008

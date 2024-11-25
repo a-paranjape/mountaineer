@@ -1,0 +1,7 @@
+astropy==5.1
+cobaya==3.3.2
+hmf==3.4.4
+mpi4py==3.1.5
+numpy==1.21.5
+scipy==1.9.1
+
