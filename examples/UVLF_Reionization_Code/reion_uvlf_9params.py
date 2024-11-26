@@ -100,7 +100,8 @@ derived_latex_name_arr = [r"\tau_{el}",r"\ell_{\varepsilon,\mathrm{jump}}",r"\al
 
 
 ##############  BEST_FIT MODEL ######################
-fsum,fdiff,f2,f3,asum,adiff,log10_fesc10, alpha_esc,log10Mcrit  = -0.44444945, -0.87537585, 10.652879, 1.1410624, 0.78730058, 0.2882062, -0.81227004, -0.11191512, 10.228836
+#fsum,fdiff,f2,f3,asum,adiff,log10_fesc10, alpha_esc,log10Mcrit  = -0.44444945, -0.87537585, 10.652879, 1.1410624, 0.78730058, 0.2882062, -0.81227004, -0.11191512, 10.228836
+fsum,fdiff,f2,f3,asum,adiff,log10_fesc10, alpha_esc,log10Mcrit  = -1.11018167, -0.72258485, 10.98427459,  2.15557805,  1.71183721, -1.02818448, -0.34596713, -2.9140448,  11.78801152
 print(log_likelihood(fsum,fdiff,f2,f3,asum,adiff, log10_fesc10, alpha_esc, log10Mcrit)) 
 
 #Returns : tau =  0.05475106
@@ -113,12 +114,12 @@ print(log_likelihood(fsum,fdiff,f2,f3,asum,adiff, log10_fesc10, alpha_esc, log10
 ############### MCMC RUN CALL STATEMENT ######################
 
 
-outdir = 'cobaya_chains/chains'
-outfile = 'reion_uvlf_9p'
-outloc = outdir+'/'+outfile
-likelihood_name="fb_joint_LF_QHI"
+# outdir = 'cobaya_chains/chains'
+# outfile = 'reion_uvlf_9p'
+# outloc = outdir+'/'+outfile
+# likelihood_name="fb_joint_LF_QHI"
 
 
-info = reion_uvlf_funcs.create_cobaya_info_dict(log_likelihood, likelihood_name , outloc, param_name_arr, param_min_arr, param_max_arr, param_start_arr, param_prop_arr, derived_name_arr=derived_name_arr, derived_min_arr=derived_min_arr, derived_max_arr=derived_max_arr, param_latex_name_arr=param_latex_name_arr, derived_latex_name_arr=derived_latex_name_arr, only_minimize=False)
-updated_info, sampler = cobaya.run(info,resume=True)
+# info = reion_uvlf_funcs.create_cobaya_info_dict(log_likelihood, likelihood_name , outloc, param_name_arr, param_min_arr, param_max_arr, param_start_arr, param_prop_arr, derived_name_arr=derived_name_arr, derived_min_arr=derived_min_arr, derived_max_arr=derived_max_arr, param_latex_name_arr=param_latex_name_arr, derived_latex_name_arr=derived_latex_name_arr, only_minimize=False)
+# updated_info, sampler = cobaya.run(info,resume=True)
 
