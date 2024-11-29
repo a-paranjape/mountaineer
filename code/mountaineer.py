@@ -856,7 +856,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.print_this('Writing to file: '+self.walks_file,self.logfile)            
             with open(self.walks_file,'w') as f:
-                f.write('# loss | a0 ... a{0:d}\n'.format(self.n_params))
+                f.write('# loss | a0 ... a{0:d}\n'.format(self.n_params-1))
         else:
             if self.verbose:
                 self.print_this('Walks exist, nothing to write.',self.logfile)            
