@@ -311,7 +311,7 @@ class Model(Module,MLUtilities):
         if self.adam:
             corr_B1 = 1-self.B1_adam**(1+t) 
             corr_B2 = 1-self.B2_adam**(1+t)
-            dtheta = self.M/corr_B1/np.sqrt(self.V/corr_B2 + self.eps_adam)
+            dtheta = self.M/corr_B1/(np.sqrt(self.V/corr_B2) + self.eps_adam)
         else:
             dtheta = self.dLdtheta
         self.params = self.params - lrate*dtheta
