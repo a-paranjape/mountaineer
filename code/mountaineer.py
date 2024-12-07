@@ -373,34 +373,40 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.survey_loss = None
         self.survey_dLdtheta = None
         ####
+        # will be set by self.survey()
+        self.Dtheta_loss = np.zeros(self.n_params)
+        ####
         # will be set by self.distribute()
         self.N_walker = None
         self.walker_layers = None
         self.lrates = None
         ####
-        # give this to user-control if needed
+        # give these to user-control if needed
         # no. of surveys to average over when updating param ranges
         self.n_iter_survey = 5
+        # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
+        self.N_traverse = 1.0 
 
         # internally set
         self.N_survey = int(self.survey_frac*self.N_evals_max)
         self.N_survey_tot = self.N_survey*self.n_iter_survey # will be updated to actual number in self.survey()
         self.N_evals_max_walk = self.N_evals_max - self.N_survey_tot
-        self.N_walker = 3*self.n_params 
+        self.N_walker = 3*self.n_params # WHY 3?? 
         self.N_survey_lhc_layers = (self.N_survey // 2) + 1
-        # min,max values of lrate
-        self.lrate_min = 0.15
-        self.lrate_max = 0.15 # will be changed by self.set_lrates()
-        self.lrate_largest_max = 0.25
                 
         # array of adam parameter values for different walkers.
         # will be set by self.set_adams() called by self.distribute()
         self.B1_adams = None
         self.B2_adams = None
         # min,max values
-        self.B1_adam_min,self.B1_adam_max = 0.75,0.9 # (default 0.9) 0.75,0.9
-        self.B2_adam_min,self.B2_adam_max = 0.75,(1-1e-6) # (default 0.999) 0.75,1-1e-6
+        # outer walkers: default Adam; inner walkers: close to mini-batch SGD
+        self.B1_adam_min,self.B1_adam_max = 0.01,0.9 # 0.8,0.9 # (default 0.9) 0.75,0.9
+        self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-6) # (1-1e-3),(1-1e-4) # (default 0.999) 0.75,1-1e-6
+        # self.B1_adam_min,self.B1_adam_max = 0.75,0.9 # (default 0.9) 0.75,0.9
+        # self.B2_adam_min,self.B2_adam_max = 0.75,(1-1e-6) # (default 0.999) 0.75,1-1e-6
 
+        self.lrate_max_fac = 2.0 # set > 1 to activate lrate variation (default 1.0)
+        
         self.X = data_pack.get('X',None)
         self.Y = data_pack.get('Y',None)
         
@@ -427,7 +433,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))        
         self.distributed = 0 # will be set to 1 upon successful call to self.distribute().
-        self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
+        self.mb_count = 2 #int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
 
         #######################
         # Following strategies for survey adjustment were considered and discarded:
@@ -537,7 +543,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # reset ranges for next iteration
             self.param_maxs = copy.deepcopy(self.param_maxs_old)
             self.param_mins = copy.deepcopy(self.param_mins_old)
+            # accumulate typical loss variation scale along each parameter direction
+            self.Dtheta_loss += np.fabs(self.survey_loss.min())/np.fabs(self.survey_dLdtheta[self.survey_loss.argmin()] + 1e-15)
+            # self.Dtheta_loss += np.mean(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
+            if self.verbose:
+                self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',self.logfile)
 
+        self.Dtheta_loss /= self.n_iter_survey
+            
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
         
@@ -728,9 +741,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
                 self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
                 self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
-                self.print_this('... ...      lrates = {0:.4f} to {1:.4f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
-                self.print_this('... ...  1-B1_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B1_adams.max(),1-self.B1_adams.min()),self.logfile)
-                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.max(),1-self.B2_adams.min()),self.logfile)
+                self.print_this('... ...      lrates (outside inwards)',self.logfile)
+                for p in range(self.n_params):
+                    self.print_this('... ... ...    p{0:d} : {1:.4f} to {2:.4f}'.format(p,self.lrates[:,p].max(),self.lrates[:,p].min()),self.logfile)                
+                self.print_this('... ...    B1_adams = {0:.3f} to {1:.3f} (outside inwards)'.format(self.B1_adams.max(),self.B1_adams.min()),self.logfile)
+                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.min(),1-self.B2_adams.max()),self.logfile)
 
             self.params_train = []
             for w in range(self.N_walker):
@@ -739,9 +754,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
                                           'lrate':self.lrates[w],
                                           'loss_params':self.loss_params,
                                           'check_after':self.check_after})
-        ##############        
-        # DO SANITY CHECK ON VALUES OF B1_ADAM, B2_ADAM and LRATE FOR EACH WALKER
-        ##############
         
         self.distributed = 1
         return 
@@ -750,12 +762,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
     def set_adams(self):
         """ Set adam parameters B1 and B2 for each walker based on its LHC layer, 
-            with outer layers having larger values of B1,B2 to make walks more ridge-directed. 
+            with outer layers having larger values of B1 and (1-B2) to make 
+            outer walks behave with default adam settings (i.e., more ridge-directed) and
+            inner walks behave close to mini-batch SGD. 
         """
         if self.N_walker is None:
             raise Exception('set_adams() can only be called within or after distribute() in Mountaineer.')
         B1_vals = np.linspace(self.B1_adam_max,self.B1_adam_min,self.walker_layers.max()+1)
-        B2_vals = np.linspace(self.B2_adam_max,self.B2_adam_min,self.walker_layers.max()+1)
+        B2_vals = np.linspace(self.B2_adam_min,self.B2_adam_max,self.walker_layers.max()+1)
         self.B1_adams = np.zeros(self.N_walker)
         self.B2_adams = np.zeros(self.N_walker)
         for w in range(self.N_walker):
@@ -769,20 +783,31 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Set learning rate for each walker based on its LHC layer, with outer layers having higher rates. """
         if self.N_walker is None:
             raise Exception('set_lrates() can only be called within or after distribute() in Mountaineer.')
+        
+        # min,max values of lrate
+        # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
+        # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale near loss minimum
+        lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
+        # lrate_typical = self.N_traverse*(self.param_maxs - self.param_mins)/np.max([3,self.max_epoch])
+        self.lrate_min = lrate_typical # 1e-2 # 0.15
+        self.lrate_max = lrate_typical # 1e-2 # 0.15 # will be changed below
+        self.lrate_largest_max = self.lrate_max_fac*lrate_typical # 1e-2 # 0.25
 
         ranges = self.param_maxs_old - self.param_mins_old
         changes_pmaxs = np.fabs(self.param_maxs - self.param_maxs_old)/ranges
         changes_pmins = np.fabs(self.param_mins - self.param_mins_old)/ranges
         # above are changes in maxs,mins, relative to old ranges
-        max_rel_change = np.max([changes_pmaxs.max(),changes_pmins.max()]) # largest relative change
-        self.lrate_max = np.min([self.lrate_largest_max,self.lrate_max*(1+max_rel_change)])
-        self.lrate_max = np.max([self.lrate_min,self.lrate_max])
-        
-        lrate_vals = np.linspace(self.lrate_max,self.lrate_min,self.walker_layers.max()+1)
-        # linearly change from min (default 0.15) to max (minimum 0.25) from layer = walker_layers.max()+1 to 0
-        self.lrates = np.zeros(self.N_walker)
+        max_rel_change = np.maximum(changes_pmaxs,changes_pmins) # vector of largest relative change
+        self.lrate_max = np.minimum(self.lrate_largest_max,self.lrate_max*(1+max_rel_change))
+        self.lrate_max = np.maximum(self.lrate_min,self.lrate_max)
+
+        lrate_vals = np.zeros((self.walker_layers.max()+1,self.n_params))
+        for p in range(self.n_params):
+            lrate_vals[:,p] = np.linspace(self.lrate_max[p],self.lrate_min[p],self.walker_layers.max()+1)
+        self.lrates = np.zeros((self.N_walker,self.n_params))
         for w in range(self.N_walker):
-            self.lrates[w] = lrate_vals[self.walker_layers[w]]
+            # set lrate with additional factor to account for adam parameter variations
+            self.lrates[w] = lrate_vals[self.walker_layers[w]]#*np.sqrt(1-self.B2_adams[w])/(1-self.B1_adams[w]) # including B-dep facs makes lrates smaller
         return
     ###########################################    
 
