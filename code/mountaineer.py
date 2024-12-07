@@ -544,13 +544,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.param_maxs = copy.deepcopy(self.param_maxs_old)
             self.param_mins = copy.deepcopy(self.param_mins_old)
             # accumulate typical loss variation scale along each parameter direction
-            self.Dtheta_loss += 2/np.fabs(self.survey_dLdtheta[self.survey_loss.argmin()] + 1e-15)
+            # dtheta_loss_this = 2/np.fabs(self.survey_dLdtheta[self.survey_loss.argmin()] + 1e-15)
+            dtheta_loss_this = np.median(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
+            dtheta_loss_this[dtheta_loss_this > 1e15] = 0.0
+            self.Dtheta_loss += dtheta_loss_this
             # self.Dtheta_loss += np.fabs(self.survey_loss.min())/np.fabs(self.survey_dLdtheta[self.survey_loss.argmin()] + 1e-15)
             # self.Dtheta_loss += np.mean(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
             if self.verbose:
-                self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',self.logfile)
+                self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(dtheta_loss_this[p]) for p in range(self.n_params)])+']',self.logfile)
 
         self.Dtheta_loss /= self.n_iter_survey
+        if self.verbose:
+            self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',self.logfile)
             
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
@@ -787,7 +792,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         
         # min,max values of lrate
         # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
-        # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale near loss minimum
+        # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
         lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
         # lrate_typical = self.N_traverse*(self.param_maxs - self.param_mins)/np.max([3,self.max_epoch])
         self.lrate_min = lrate_typical # 1e-2 # 0.15
