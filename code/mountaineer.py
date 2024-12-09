@@ -715,22 +715,22 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         if self.verbose:
             self.print_this('... ... estimating loss by nearest nbr in survey',self.logfile)
-        pins_loss = np.zeros(pins.shape[0])
+        pins_like = np.zeros(pins.shape[0])
         tree = syspat.KDTree(sparams)
         dist_nbr,idx_nbr = tree.query(pins,k=1)#,workers=NPROC)
         # dist_nbr: float (N_walker,) distances to nearest survey nbr for each walker
         # idx_nbr : int (N_walker,) indices of nearest survey nbr for each walker
         for w in range(pins.shape[0]):
-            pins_loss[w] = self.survey_loss[idx_nbr[w]]
-        walker_layers = pins_loss.copy() # store loss values for conversion to integers
+            pins_like[w] = self.survey_loss[idx_nbr[w]]
+        walker_layers = pins_like.copy() # store loss values for conversion to integers
 
         if self.verbose:
             self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
-        pins_loss = np.exp(-0.5*(pins_loss - pins_loss.min())) # so minimum loss assigned value 1, rest between 0..1
-        # print(np.percentile(pins_loss,90),np.percentile(pins_loss,93),np.percentile(pins_loss,97),np.percentile(pins_loss,99))
+        pins_like = np.exp(-0.5*(pins_like - pins_like.min())) # so minimum loss assigned value 1, rest between 0..1
+        # print(np.percentile(pins_like,90),np.percentile(pins_like,93),np.percentile(pins_like,97),np.percentile(pins_like,99))
         keep_this = np.ones(pins.shape[0],dtype=bool)
         u = self.rng.rand(pins.shape[0])
-        keep_this[u >= pins_loss] = False # keep with probability pins_loss
+        keep_this[u >= pins_like] = False # keep with probability pins_like
 
         keep_sum = keep_this.sum()
         if keep_sum < self.N_walker:
@@ -739,7 +739,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.print_this('... ... ... adjusting by including {0:d} extra (top-weighted)'.format(N_add),self.logfile)
             id_false = np.where(keep_this == False)[0]
-            id_switch = np.argsort(pins_loss[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
+            id_switch = np.argsort(pins_like[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
             for s in id_switch:
                 keep_this[id_false[s]] = True
             if keep_this.sum() != self.N_walker:
@@ -757,7 +757,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 raise Exception('Problem in discarding extra locations')
 
         pins = pins[keep_this]
-        pins_loss = pins_loss[keep_this]
+        pins_like = pins_like[keep_this]
         walker_layers = walker_layers[keep_this] # loss values
             
         if self.verbose:
