@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as linalg
+import scipy.spatial as syspat
 import sys
 
 from paths import ML_Path
@@ -426,7 +427,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.verbose = data_pack.get('verbose',True)
         self.logfile = data_pack.get('logfile',None)
 
-        self.rng = np.random.RandomState(self.seed) # only used in self.adjust_survey for shuffling param directions
+        self.rng = np.random.RandomState(self.seed)
+        # used in self.adjust_survey for shuffling param directions and in self.initialize_walkers to downsample walker locations
         
         if self.verbose:
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
@@ -550,8 +552,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.Dtheta_loss += dtheta_loss_this
             # self.Dtheta_loss += np.fabs(self.survey_loss.min())/np.fabs(self.survey_dLdtheta[self.survey_loss.argmin()] + 1e-15)
             # self.Dtheta_loss += np.mean(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
-            if self.verbose:
-                self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(dtheta_loss_this[p]) for p in range(self.n_params)])+']',self.logfile)
+            # if self.verbose:
+            #     self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(dtheta_loss_this[p]) for p in range(self.n_params)])+']',self.logfile)
 
         self.Dtheta_loss /= self.n_iter_survey
         if self.verbose:
@@ -695,6 +697,86 @@ class Mountaineer(Module,MLUtilities,Utilities):
         
         return 
     ###########################################
+
+    def initialize_walkers(self):
+        """ Initialize walkers by importance sampling using existing LHC survey samples. """
+        oversamp = 100
+        if self.verbose:
+            self.print_this('... ... generating LHC with oversampling by factor {0:d}'.format(oversamp),self.logfile)
+        pins = self.gen_latin_hypercube(Nsamp=oversamp*self.N_walker,dim=self.n_params,return_layers=False)
+
+        if self.verbose:
+            self.print_this('... ... compressing survey to final unit cube',self.logfile)
+        # map survey to unit cube defined by final pmin,pmax values
+        sparams = self.survey_params.copy()
+        for p in range(self.n_params):
+            sparams[:,p] -= self.param_mins[p]
+            sparams[:,p] /= (self.param_maxs[p] - self.param_mins[p])
+
+        if self.verbose:
+            self.print_this('... ... estimating loss by nearest nbr in survey',self.logfile)
+        pins_loss = np.zeros(pins.shape[0])
+        tree = syspat.KDTree(sparams)
+        dist_nbr,idx_nbr = tree.query(pins,k=1)#,workers=NPROC)
+        # dist_nbr: float (N_walker,) distances to nearest survey nbr for each walker
+        # idx_nbr : int (N_walker,) indices of nearest survey nbr for each walker
+        for w in range(pins.shape[0]):
+            pins_loss[w] = self.survey_loss[idx_nbr[w]]
+        walker_layers = pins_loss.copy() # store loss values for conversion to integers
+
+        if self.verbose:
+            self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
+        pins_loss = np.exp(-0.5*(pins_loss - pins_loss.min())) # so minimum loss assigned value 1, rest between 0..1
+        # print(np.percentile(pins_loss,90),np.percentile(pins_loss,93),np.percentile(pins_loss,97),np.percentile(pins_loss,99))
+        keep_this = np.ones(pins.shape[0],dtype=bool)
+        u = self.rng.rand(pins.shape[0])
+        keep_this[u >= pins_loss] = False # keep with probability pins_loss
+
+        keep_sum = keep_this.sum()
+        if keep_sum < self.N_walker:
+            # add a few
+            N_add = self.N_walker - keep_sum
+            if self.verbose:
+                self.print_this('... ... ... adjusting by including {0:d} extra'.format(N_add),self.logfile)
+            id_false = np.where(keep_this == False)[0]
+            id_switch = self.rng.choice(id_false.size,size=N_add,replace=False)
+            for s in id_switch:
+                keep_this[id_false[s]] = True
+            if keep_this.sum() != self.N_walker:
+                raise Exception('Problem in including extra locations')
+        else:
+            # discard a few
+            N_throw = keep_sum - self.N_walker
+            if self.verbose:
+                self.print_this('... ... ... adjusting by discarding {0:d} extra'.format(N_throw),self.logfile)
+            id_true = np.where(keep_this == True)[0]
+            id_switch = self.rng.choice(id_true.size,size=N_throw,replace=False)
+            for s in id_switch:
+                keep_this[id_true[s]] = False
+            if keep_this.sum() != self.N_walker:
+                raise Exception('Problem in discarding extra locations')
+
+        pins = pins[keep_this]
+        pins_loss = pins_loss[keep_this]
+        walker_layers = walker_layers[keep_this] # loss values
+            
+        if self.verbose:
+            self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
+        walker_layers = (walker_layers.max() - walker_layers)/(walker_layers.max() - walker_layers.min() + 1e-15) # reversed order and normalized
+        walker_layers = (np.rint(walker_layers*self.N_walker/2)).astype(int)
+        # for w in range(walker_layers.size):
+        #     print(w,walker_layers[w])
+        if walker_layers.max() < 0:
+            if self.verbose:
+                self.print_this('... ... ... problem in setting walker layers: all layers set to 1',self.logfile)
+            walker_layers = np.ones(pins.shape[0],dtype=int)
+            
+        if self.verbose:
+            self.print_this('... ... expanding walker params from unit cube to max,min values',self.logfile)
+        for p in range(self.n_params):
+            pins[:,p] *= (self.param_maxs[p] - self.param_mins[p])
+            pins[:,p] += self.param_mins[p]
+        return pins,walker_layers
     
     ###########################################
     def distribute(self):
@@ -719,8 +801,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
                    'seed':self.seed,'verbose':False,'logfile':self.logfile}
 
         self.walkers = []
-        pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
-                                                           param_mins=self.param_mins,param_maxs=self.param_maxs)
+        # pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
+        #                                                    param_mins=self.param_mins,param_maxs=self.param_maxs)
+        pins,self.walker_layers = self.initialize_walkers()
         self.set_adams() # will set self.B1_adams,self.B2_adams
         
         for w in range(self.N_walker):
