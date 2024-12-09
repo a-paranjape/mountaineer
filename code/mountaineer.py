@@ -737,9 +737,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # add a few
             N_add = self.N_walker - keep_sum
             if self.verbose:
-                self.print_this('... ... ... adjusting by including {0:d} extra'.format(N_add),self.logfile)
+                self.print_this('... ... ... adjusting by including {0:d} extra (top-weighted)'.format(N_add),self.logfile)
             id_false = np.where(keep_this == False)[0]
-            id_switch = self.rng.choice(id_false.size,size=N_add,replace=False)
+            id_switch = np.argsort(pins_loss[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
             for s in id_switch:
                 keep_this[id_false[s]] = True
             if keep_this.sum() != self.N_walker:
@@ -748,7 +748,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # discard a few
             N_throw = keep_sum - self.N_walker
             if self.verbose:
-                self.print_this('... ... ... adjusting by discarding {0:d} extra'.format(N_throw),self.logfile)
+                self.print_this('... ... ... adjusting by discarding {0:d} extra (random)'.format(N_throw),self.logfile)
             id_true = np.where(keep_this == True)[0]
             id_switch = self.rng.choice(id_true.size,size=N_throw,replace=False)
             for s in id_switch:
