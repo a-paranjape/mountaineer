@@ -113,6 +113,10 @@ class Walker(Module,MLUtilities,Utilities):
         self.walks_exist = data_pack.get('walks_exist',False)
         self.verbose = data_pack.get('verbose',True)
         self.logfile = data_pack.get('logfile',None)
+
+        # these will be updated while training
+        self.N_evals_model = 0
+        self.N_evals_deriv = 0
         
         self.rng = np.random.RandomState(self.seed)
         
@@ -200,12 +204,14 @@ class Walker(Module,MLUtilities,Utilities):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
                 
                 Ypred = self.model.forward(X_train_shuff) # update activations
+                self.N_evals_model += 1
                 loss_params['slice_b'] = sl # setting this ensures loss calculated for mini-batch
                 self.loss = self.loss_module(params=loss_params)
                 batch_loss = self.loss.forward(Ypred) # calculate current batch loss, update self.loss
                 dLdm = self.loss.backward() # loss.backward returns d(loss)/d(model)
 
                 self.model.backward(dLdm) # update gradients
+                self.N_evals_deriv += 1
                 self.model.sgd_step(t,lrate) # gradient descent update
                 
             # validation check
@@ -213,6 +219,7 @@ class Walker(Module,MLUtilities,Utilities):
             loss_params['slice_b'] = np.s_[:]
             self.loss = self.loss_module(params=loss_params)
             Ypred_val = self.model.forward(self.X_val) # update activations. prediction for validation data
+            self.N_evals_model += 1
             self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
             if t > check_after:
                 x = np.arange(t-check_after,t+1)
@@ -223,13 +230,6 @@ class Walker(Module,MLUtilities,Utilities):
                     if self.verbose:
                         self.print_this('',self.logfile)
                     break
-            # if t > check_after:
-            #     chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
-            #     chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
-            #     if chk_half & chk:
-            #         if self.verbose:
-            #             self.print_this('',self.logfile)
-            #         break
                 
             if self.verbose:
                 self.status_bar(t,max_epoch)
@@ -260,6 +260,7 @@ class Walker(Module,MLUtilities,Utilities):
         self.loss = self.loss_module(params=lp)
 
         Ypred = self.model.forward(self.X)
+        self.N_evals_model += 1
         loss = self.loss.forward(Ypred)
         
         seq = [loss] + list(self.model.params.T[0])
@@ -419,6 +420,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.n_iter_survey = 5
         # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
         self.N_traverse = 1.0 
+
+        # these will be updated while training
+        self.N_evals_model = 0
+        self.N_evals_deriv = 0
 
         # internally set
         self.N_survey = int(self.survey_frac*self.N_evals_max)
@@ -635,10 +640,12 @@ class Mountaineer(Module,MLUtilities,Utilities):
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
-            Ypred = model_survey.forward(self.X) 
+            Ypred = model_survey.forward(self.X)
+            self.N_evals_model += 1
             survey_loss[s] = loss.forward(Ypred)
             dLdm = loss.backward()
             model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
+            self.N_evals_deriv += 1
             survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
@@ -975,6 +982,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         for w in range(self.N_walker):
             self.walkers[w].train(params=self.params_train[w])
+            self.N_evals_model += self.walkers[w].N_evals_model
+            self.N_evals_deriv += self.walkers[w].N_evals_deriv
             if self.verbose:
                 self.status_bar(w,self.N_walker)
         
