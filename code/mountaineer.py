@@ -436,11 +436,29 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.B1_adams = None
         self.B2_adams = None
         # min,max values
+        # # B2 -- outer walkers: default Adam; inner walkers: close to mini-batch SGD; B1 -- default Adam
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-6) # (default 0.999)
+        # # B1 -- outer walkers: default Adam; inner walkers: close to mini-batch SGD; B2 -- default Adam
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
+        # # all walkers: B2 default adam; B1 close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.01 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
+        # # all walkers: B1 default adam; B2 close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-6),(1-1e-6) # (default 0.999)
+        # # all walkers: close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.01 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-6),(1-1e-6) # (default 0.999)
+        # # all walkers: default Adam
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
         # outer walkers: default Adam; inner walkers: close to mini-batch SGD
         self.B1_adam_min,self.B1_adam_max = 0.01,0.9 # (default 0.9)
         self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-6) # (default 0.999)
 
-        self.lrate_max_fac = 2.0 # set > 1 to activate lrate variation (default 1.0)
+        self.lrate_max_fac = 1.0 # set > 1 to activate lrate variation (default 1.0)
         
         self.X = data_pack.get('X',None)
         self.Y = data_pack.get('Y',None)
@@ -758,9 +776,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
         pins_like = np.exp(-0.5*(pins_like - self.survey_loss.min())) # so global minimum loss assigned value 1, rest between 0..1
-        print('... ... ... top {0:d} walkers'.format(self.N_walker))
-        for w in np.argsort(walker_layers)[:self.N_walker]:
-            print(w+1,walker_layers[w],pins_like[w],pins[w])
+        # print('... ... ... top {0:d} walkers'.format(self.N_walker))
+        # for w in np.argsort(walker_layers)[:self.N_walker]:
+        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
         keep_this = np.ones(pins.shape[0],dtype=bool)
         u = self.rng.rand(pins.shape[0])
         keep_this[u >= pins_like] = False # keep with probability pins_like
@@ -793,8 +811,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         pins_like = pins_like[keep_this]
         walker_layers = walker_layers[keep_this] # loss values
         print('... ... ... selected {0:d} walkers'.format(self.N_walker))
-        for w in range(pins.shape[0]):
-            print(w+1,walker_layers[w],pins_like[w],pins[w])
+        # for w in range(pins.shape[0]):
+        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
             
         if self.verbose:
             self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
@@ -875,9 +893,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
                                                                param_mins=self.param_mins,param_maxs=self.param_maxs)
         else:
-            # pins,self.walker_layers = self.initialize_walkers()
-            pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
-                                                               param_mins=self.param_mins,param_maxs=self.param_maxs)
+            pins,self.walker_layers = self.initialize_walkers()
+            # pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
+            #                                                    param_mins=self.param_mins,param_maxs=self.param_maxs)
         self.set_adams() # will set self.B1_adams,self.B2_adams
         
         for w in range(self.N_walker):
@@ -951,7 +969,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
         # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
         lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
-        # lrate_typical = self.N_traverse*(self.param_maxs - self.param_mins)/np.max([3,self.max_epoch])
         self.lrate_min = lrate_typical # 1e-2 # 0.15
         self.lrate_max = lrate_typical # 1e-2 # 0.15 # will be changed below
         self.lrate_largest_max = self.lrate_max_fac*lrate_typical # 1e-2 # 0.25
