@@ -748,92 +748,114 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
     ###########################################
     def initialize_walkers(self):
-        """ Initialize walkers by importance sampling using existing LHC survey samples. """
-        oversamp = self.n_iter_survey
-        if self.verbose:
-            self.print_this('... ... generating LHC with oversampling by factor {0:d}'.format(oversamp),self.logfile)
-        pins = self.gen_latin_hypercube(Nsamp=oversamp*self.N_walker,dim=self.n_params,return_layers=False)
+        """ Initialize walkers by choosing best of existing LHC survey locations. """
 
         if self.verbose:
-            self.print_this('... ... compressing survey to final unit cube',self.logfile)
-        # map survey to unit cube defined by final pmin,pmax values
-        sparams = self.survey_params.copy()
-        for p in range(self.n_params):
-            sparams[:,p] -= self.param_mins[p]
-            sparams[:,p] /= (self.param_maxs[p] - self.param_mins[p])
-
-        if self.verbose:
-            self.print_this('... ... estimating loss by nearest nbr in survey',self.logfile)
-        pins_like = np.zeros(pins.shape[0])
-        tree = spatial.KDTree(sparams)
-        dist_nbr,idx_nbr = tree.query(pins,k=1)#,workers=NPROC)
-        # dist_nbr: float (N_walker,) distances to nearest survey nbr for each walker
-        # idx_nbr : int (N_walker,) indices of nearest survey nbr for each walker
-        for w in range(pins.shape[0]):
-            pins_like[w] = self.survey_loss[idx_nbr[w]]
-        walker_layers = pins_like.copy() # store loss values for conversion to integers
-
-        if self.verbose:
-            self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
-        pins_like = np.exp(-0.5*(pins_like - self.survey_loss.min())) # so global minimum loss assigned value 1, rest between 0..1
-        # print('... ... ... top {0:d} walkers'.format(self.N_walker))
-        # for w in np.argsort(walker_layers)[:self.N_walker]:
-        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
-        keep_this = np.ones(pins.shape[0],dtype=bool)
-        u = self.rng.rand(pins.shape[0])
-        keep_this[u >= pins_like] = False # keep with probability pins_like
-
-        keep_sum = keep_this.sum()
-        if keep_sum < self.N_walker:
-            # add a few
-            N_add = self.N_walker - keep_sum
-            if self.verbose:
-                self.print_this('... ... ... adjusting by including {0:d} extra (top-weighted)'.format(N_add),self.logfile)
-            id_false = np.where(keep_this == False)[0]
-            id_switch = np.argsort(pins_like[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
-            for s in id_switch:
-                keep_this[id_false[s]] = True
-            if keep_this.sum() != self.N_walker:
-                raise Exception('Problem in including extra locations')
-        else:
-            # discard a few
-            N_throw = keep_sum - self.N_walker
-            if self.verbose:
-                self.print_this('... ... ... adjusting by discarding {0:d} extra (random)'.format(N_throw),self.logfile)
-            id_true = np.where(keep_this == True)[0]
-            id_switch = self.rng.choice(id_true.size,size=N_throw,replace=False)
-            for s in id_switch:
-                keep_this[id_true[s]] = False
-            if keep_this.sum() != self.N_walker:
-                raise Exception('Problem in discarding extra locations')
-
-        pins = pins[keep_this]
-        pins_like = pins_like[keep_this]
-        walker_layers = walker_layers[keep_this] # loss values
-        print('... ... ... selected {0:d} walkers'.format(self.N_walker))
-        # for w in range(pins.shape[0]):
-        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
+            self.print_this('... ... selecting {0:d} lowest loss locations from survey'.format(self.N_walker),self.logfile)
+        choose = self.survey_loss.argsort()[:self.N_walker] # indices of N_walker smallest loss values
+        pins = self.survey_params[choose]
+        walker_layers = self.survey_loss[choose] # store loss values for conversion to integers
             
         if self.verbose:
             self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
         walker_layers = (walker_layers.max() - walker_layers)/(walker_layers.max() - walker_layers.min() + 1e-15) # reversed order and normalized
         walker_layers = (np.rint(walker_layers*self.N_walker/2)).astype(int)
-        # for w in range(walker_layers.size):
-        #     print(w,walker_layers[w])
         if walker_layers.max() < 0:
             if self.verbose:
                 self.print_this('... ... ... problem in setting walker layers: all layers set to 1',self.logfile)
             walker_layers = np.ones(pins.shape[0],dtype=int)
-            
-        if self.verbose:
-            self.print_this('... ... expanding walker params from unit cube to max,min values',self.logfile)
-        for p in range(self.n_params):
-            pins[:,p] *= (self.param_maxs[p] - self.param_mins[p])
-            pins[:,p] += self.param_mins[p]
         
         return pins,walker_layers
     ###########################################
 
+    # ###########################################
+    # def initialize_walkers(self):
+    #     """ Initialize walkers by importance sampling using existing LHC survey samples. """
+    #     oversamp = self.n_iter_survey
+    #     if self.verbose:
+    #         self.print_this('... ... generating LHC with oversampling by factor {0:d}'.format(oversamp),self.logfile)
+    #     pins = self.gen_latin_hypercube(Nsamp=oversamp*self.N_walker,dim=self.n_params,return_layers=False)
+
+    #     if self.verbose:
+    #         self.print_this('... ... compressing survey to final unit cube',self.logfile)
+    #     # map survey to unit cube defined by final pmin,pmax values
+    #     sparams = self.survey_params.copy()
+    #     for p in range(self.n_params):
+    #         sparams[:,p] -= self.param_mins[p]
+    #         sparams[:,p] /= (self.param_maxs[p] - self.param_mins[p])
+
+    #     if self.verbose:
+    #         self.print_this('... ... estimating loss by nearest nbr in survey',self.logfile)
+    #     pins_like = np.zeros(pins.shape[0])
+    #     tree = spatial.KDTree(sparams)
+    #     dist_nbr,idx_nbr = tree.query(pins,k=1)#,workers=NPROC)
+    #     # dist_nbr: float (N_walker,) distances to nearest survey nbr for each walker
+    #     # idx_nbr : int (N_walker,) indices of nearest survey nbr for each walker
+    #     for w in range(pins.shape[0]):
+    #         pins_like[w] = self.survey_loss[idx_nbr[w]]
+    #     walker_layers = pins_like.copy() # store loss values for conversion to integers
+
+    #     if self.verbose:
+    #         self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
+    #     pins_like = np.exp(-0.5*(pins_like - self.survey_loss.min())) # so global minimum loss assigned value 1, rest between 0..1
+    #     # print('... ... ... top {0:d} walkers'.format(self.N_walker))
+    #     # for w in np.argsort(walker_layers)[:self.N_walker]:
+    #     #     print(w+1,walker_layers[w],pins_like[w],pins[w])
+    #     keep_this = np.ones(pins.shape[0],dtype=bool)
+    #     u = self.rng.rand(pins.shape[0])
+    #     keep_this[u >= pins_like] = False # keep with probability pins_like
+
+    #     keep_sum = keep_this.sum()
+    #     if keep_sum < self.N_walker:
+    #         # add a few
+    #         N_add = self.N_walker - keep_sum
+    #         if self.verbose:
+    #             self.print_this('... ... ... adjusting by including {0:d} extra (top-weighted)'.format(N_add),self.logfile)
+    #         id_false = np.where(keep_this == False)[0]
+    #         id_switch = np.argsort(pins_like[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
+    #         for s in id_switch:
+    #             keep_this[id_false[s]] = True
+    #         if keep_this.sum() != self.N_walker:
+    #             raise Exception('Problem in including extra locations')
+    #     else:
+    #         # discard a few
+    #         N_throw = keep_sum - self.N_walker
+    #         if self.verbose:
+    #             self.print_this('... ... ... adjusting by discarding {0:d} extra (random)'.format(N_throw),self.logfile)
+    #         id_true = np.where(keep_this == True)[0]
+    #         id_switch = self.rng.choice(id_true.size,size=N_throw,replace=False)
+    #         for s in id_switch:
+    #             keep_this[id_true[s]] = False
+    #         if keep_this.sum() != self.N_walker:
+    #             raise Exception('Problem in discarding extra locations')
+
+    #     pins = pins[keep_this]
+    #     pins_like = pins_like[keep_this]
+    #     walker_layers = walker_layers[keep_this] # loss values
+    #     print('... ... ... selected {0:d} walkers'.format(self.N_walker))
+    #     # for w in range(pins.shape[0]):
+    #     #     print(w+1,walker_layers[w],pins_like[w],pins[w])
+            
+    #     if self.verbose:
+    #         self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
+    #     walker_layers = (walker_layers.max() - walker_layers)/(walker_layers.max() - walker_layers.min() + 1e-15) # reversed order and normalized
+    #     walker_layers = (np.rint(walker_layers*self.N_walker/2)).astype(int)
+    #     # for w in range(walker_layers.size):
+    #     #     print(w,walker_layers[w])
+    #     if walker_layers.max() < 0:
+    #         if self.verbose:
+    #             self.print_this('... ... ... problem in setting walker layers: all layers set to 1',self.logfile)
+    #         walker_layers = np.ones(pins.shape[0],dtype=int)
+            
+    #     if self.verbose:
+    #         self.print_this('... ... expanding walker params from unit cube to max,min values',self.logfile)
+    #     for p in range(self.n_params):
+    #         pins[:,p] *= (self.param_maxs[p] - self.param_mins[p])
+    #         pins[:,p] += self.param_mins[p]
+        
+    #     return pins,walker_layers
+    # ###########################################
+    
     ###########################################
     def calc_N_walker(self):
         """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
