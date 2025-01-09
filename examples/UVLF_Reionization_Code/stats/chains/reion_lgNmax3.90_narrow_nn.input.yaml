@@ -1,0 +1,111 @@
+theory:
+  likelihoods.NNTheory:
+    python_path: ../../code/likes/
+    net: true
+    keys:
+    - lsum
+    - ldiff
+    - l2
+    - l3
+    - asum
+    - adiff
+    - log10_fesc10
+    - alpha_esc
+    - log10Mcrit
+likelihood:
+  likelihoods.EmulLike:
+    python_path: ../../code/likes/
+params:
+  lsum:
+    ref:
+      min: -0.360948
+      max: -0.350948
+    prior:
+      min: -1.0
+      max: 1.953968
+    proposal: 0.005
+    latex: \ell_{\varepsilon,0} + \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  ldiff:
+    ref:
+      min: -0.9163029
+      max: -0.9063029
+    prior:
+      min: -1.5
+      max: -0.075
+    proposal: 0.005
+    latex: \ell_{\varepsilon,0} - \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  l2:
+    ref:
+      min: 11.45206
+      max: 11.462060000000001
+    prior:
+      min: 9.8
+      max: 15.38334
+    proposal: 0.005
+    latex: z_\ast
+  l3:
+    ref:
+      min: 1.5440630000000002
+      max: 1.554063
+    prior:
+      min: 0.5399977
+      max: 3.918175
+    proposal: 0.005
+    latex: \Delta z_\ast
+  asum:
+    ref:
+      min: 1.6562420000000002
+      max: 1.666242
+    prior:
+      min: 0.3018942
+      max: 6.65
+    proposal: 0.005
+    latex: \alpha_0 + \dfrac{\alpha_\mathrm{jump}}{2}
+  adiff:
+    ref:
+      min: 0.3104686
+      max: 0.3204686
+    prior:
+      min: 0.0
+      max: 0.5
+    proposal: 0.005
+    latex: \alpha_0 - \dfrac{\alpha_\mathrm{jump}}{2}
+  log10_fesc10:
+    ref:
+      min: -0.811049
+      max: -0.801049
+    prior:
+      min: -1.0
+      max: -0.5
+    proposal: 0.005
+    latex: \log_{10}~(\varepsilon_{\mathrm{esc,10}})
+  alpha_esc:
+    ref:
+      min: -0.1717853
+      max: -0.1617853
+    prior:
+      min: -0.75
+      max: 0.75
+    proposal: 0.005
+    latex: \alpha_{esc}
+  log10Mcrit:
+    ref:
+      min: 10.07386
+      max: 10.083860000000001
+    prior:
+      min: 8.15
+      max: 10.95397
+    proposal: 0.005
+    latex: \log_{10}~M_{\mathrm{crit}}
+sampler:
+  mcmc:
+    learn_proposal: true
+    Rminus1_single_split: 4
+    measure_speeds: true
+    max_samples: 1000000
+    max_tries: 10000
+    Rminus1_stop: 0.01
+    Rminus1_cl_stop: 0.05
+    Rminus1_cl_level: 0.95
+    burn_in: 0
+output: reion_lgNmax3.90_narrow_nn
