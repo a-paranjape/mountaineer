@@ -356,7 +356,7 @@ class Model(Module,MLUtilities):
 class Mountaineer(Module,MLUtilities,Utilities):
     """ Main routines for initialising walkers and climbing. """
     ###########################################
-    def __init__(self,data_pack={}):
+    def __init__(self,data_pack={},**kwargs):
         """ Main class to initialise and train all walkers.
 
             data_pack should be dictionary with a subset of following keys:
@@ -384,6 +384,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             ** passed to Walker.train() calls **
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
                               E.g. for Chi2 this would be 'cov_mat' containing covariance matrix of *full* data set.
+
+            **kwargs will be passed directly (and only) to 'model' instance.
 
             Methods:
             -- climb: trains all requested walkers on given data set, starting at Latin hypercube of initial locations.
@@ -468,8 +470,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_mins = np.array(self.param_mins)
         self.param_maxs = np.array(self.param_maxs)
         
-        self.model_inst = self.Model(n_params=self.n_params)#,adam=self.adam,
-                                     # B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
+        self.model_inst = self.Model(n_params=self.n_params,**kwargs)
         
         self.val_frac = data_pack.get('val_frac',0.2) # fraction of input data to use for validation
         
