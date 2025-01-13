@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.linalg as linalg
-import sys
+import scipy.spatial as spatial
+import sys,os
 
 from paths import ML_Path
 sys.path.append(ML_Path)
@@ -12,7 +13,9 @@ import copy,pickle
 import matplotlib.pyplot as plt
 import gc
 
+###############################################
 class Chi2(Module,MLUtilities):
+    ###########################################
     def __init__(self,params={}):
         self.Y_full = params.get('Y_full',None)
         if self.Y_full is None:
@@ -51,7 +54,9 @@ class Chi2(Module,MLUtilities):
         #                      = (Lvec_k if k in batch else 0) + res_i sum_j Cinv_{ij} d res_j / d m_k 
         #                      = (Lvec_k if k in batch else 0) + res_i sum_j Cinv_{ij} delta_{jk} 
         #                      = (Lvec_k if k in batch else 0) + sum_{i in batch} res_i Cinv_{ik}
+    ###########################################
     
+    ###########################################
     def forward(self,Ypred_sub):
         resid_sub = Ypred_sub - self.Y_sub # (1,n_samp)
         self.resid_b = resid_sub*self.batch_mask # (1,n_samp) with non-zero only in batch
@@ -59,16 +64,21 @@ class Chi2(Module,MLUtilities):
         self.Loss_vec = self.cv(z*self.batch_mask) # (n_samp,1) with non-zero only in batch
         Loss = np.dot(self.resid_b,self.Loss_vec) # (1,1)
         return Loss[0,0] # scalar
+    ###########################################
 
+    ###########################################
     def backward(self):
         dLdm = self.Loss_vec.T # (1,n_samp)
         z = self.rv(linalg.cho_solve((self.L_sub,True),self.resid_b[0],check_finite=False))
         # solves (L L^T) z^T = resid or z = (C^-1 resid)^T, shape (1,n_samp)
         dLdm += z
         return dLdm
+    ###########################################
 
 
+###############################################
 class Walker(Module,MLUtilities,Utilities):
+    ###########################################
     def __init__(self,data_pack={}):
         """ Class to implement gradient descent for single walker.
             data_pack should be dictionary with a subset of following keys:
@@ -103,6 +113,10 @@ class Walker(Module,MLUtilities,Utilities):
         self.walks_exist = data_pack.get('walks_exist',False)
         self.verbose = data_pack.get('verbose',True)
         self.logfile = data_pack.get('logfile',None)
+
+        # these will be updated while training
+        self.N_evals_model = 0
+        self.N_evals_deriv = 0
         
         self.rng = np.random.RandomState(self.seed)
         
@@ -142,7 +156,9 @@ class Walker(Module,MLUtilities,Utilities):
 
         self.X_val = self.X[:,self.ind_val].copy()
         self.Y_val = self.Y[:,self.ind_val].copy()
+    ###########################################
         
+    ###########################################
     def train(self,params={}):
         """ Main routine for training.
             Expect X.shape = (n0,n_samp) = Y.shape
@@ -188,12 +204,14 @@ class Walker(Module,MLUtilities,Utilities):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
                 
                 Ypred = self.model.forward(X_train_shuff) # update activations
+                self.N_evals_model += 1
                 loss_params['slice_b'] = sl # setting this ensures loss calculated for mini-batch
                 self.loss = self.loss_module(params=loss_params)
                 batch_loss = self.loss.forward(Ypred) # calculate current batch loss, update self.loss
                 dLdm = self.loss.backward() # loss.backward returns d(loss)/d(model)
 
                 self.model.backward(dLdm) # update gradients
+                self.N_evals_deriv += 1
                 self.model.sgd_step(t,lrate) # gradient descent update
                 
             # validation check
@@ -201,6 +219,7 @@ class Walker(Module,MLUtilities,Utilities):
             loss_params['slice_b'] = np.s_[:]
             self.loss = self.loss_module(params=loss_params)
             Ypred_val = self.model.forward(self.X_val) # update activations. prediction for validation data
+            self.N_evals_model += 1
             self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
             if t > check_after:
                 x = np.arange(t-check_after,t+1)
@@ -211,13 +230,6 @@ class Walker(Module,MLUtilities,Utilities):
                     if self.verbose:
                         self.print_this('',self.logfile)
                     break
-            # if t > check_after:
-            #     chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
-            #     chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
-            #     if chk_half & chk:
-            #         if self.verbose:
-            #             self.print_this('',self.logfile)
-            #         break
                 
             if self.verbose:
                 self.status_bar(t,max_epoch)
@@ -228,14 +240,18 @@ class Walker(Module,MLUtilities,Utilities):
             self.print_this("... ... done",self.logfile)
             
         return
+    ###########################################
 
+    ###########################################
     def predict(self,X):
         """ Predict targets for given data set. """
         if X.shape[0] != 1:
             raise TypeError("Incompatible data in Walker.predict(). Expected 1, got {0:d}".format(X.shape[0]))
         # update and predict._b        
         return self.model.forward(X)
+    ###########################################
 
+    ###########################################
     def save(self,save_setup=False,loss_params={}):
         """ Save current total loss + params and (optionally) data_pack to file(s). """
         lp = copy.deepcopy(loss_params)
@@ -244,6 +260,7 @@ class Walker(Module,MLUtilities,Utilities):
         self.loss = self.loss_module(params=lp)
 
         Ypred = self.model.forward(self.X)
+        self.N_evals_model += 1
         loss = self.loss.forward(Ypred)
         
         seq = [loss] + list(self.model.params.T[0])
@@ -254,7 +271,9 @@ class Walker(Module,MLUtilities,Utilities):
                 pickle.dump(self.data_pack,f)
             
         return    
+    ###########################################
 
+    ###########################################
     # to be called after generating instance of Walker() with correct setup data_pack
     def load(self):
         """ Load loss values and data_pack from file. """
@@ -262,9 +281,12 @@ class Walker(Module,MLUtilities,Utilities):
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.data_pack = pickle.load(f)
         return out
+    ###########################################
 
 
+###############################################
 class Model(Module,MLUtilities):
+    ###########################################
     def __init__(self,n_params=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
         self.n_params = n_params
         if self.n_params is None:
@@ -281,11 +303,15 @@ class Model(Module,MLUtilities):
         if self.adam:
             self.M = np.zeros_like(self.params)
             self.V = np.zeros_like(self.params)
+    ###########################################
     
+    ###########################################
     def forward(self,X):
         self.X = X
         return self.calc_model(X)
+    ###########################################
     
+    ###########################################
     def backward(self,dLdm):
         # expect dLdm.shape = (1,n_samp)
         dmdtheta = self.calc_dmdtheta() # (n_params,n_samp)
@@ -295,34 +321,42 @@ class Model(Module,MLUtilities):
             self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdtheta
             self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdtheta**2
         return
+    ###########################################
 
+    ###########################################
     def calc_model(self,X):
         prnt_strng = "User must specify calc_model method of Model instance."
         prnt_strng += " Output must be model prediction of shape X.shape = (1,n_samp)."
         raise NotImplementedError(prnt_strng)
+    ###########################################
 
+    ###########################################
     def calc_dmdtheta(self):
         # expect dLdm.shape = (1,n_samp)
         prnt_strng = "User must specify calc_dmdtheta method of Model instance." 
         prnt_strng += " Method must return dmdtheta (n_params,n_samp) using input dLdm (1,n_samp)."
         raise NotImplementedError(prnt_strng)
+    ###########################################
     
+    ###########################################
     def sgd_step(self,t,lrate):
         if self.adam:
             corr_B1 = 1-self.B1_adam**(1+t) 
             corr_B2 = 1-self.B2_adam**(1+t)
-            dtheta = self.M/corr_B1/np.sqrt(self.V/corr_B2 + self.eps_adam)
+            dtheta = self.M/corr_B1/(np.sqrt(self.V/corr_B2) + self.eps_adam)
         else:
             dtheta = self.dLdtheta
         self.params = self.params - lrate*dtheta
         
         return 
+    ###########################################
 
 
+###############################################
 class Mountaineer(Module,MLUtilities,Utilities):
     """ Main routines for initialising walkers and climbing. """
     ###########################################
-    def __init__(self,data_pack={}):
+    def __init__(self,data_pack={},**kwargs):
         """ Main class to initialise and train all walkers.
 
             data_pack should be dictionary with a subset of following keys:
@@ -351,6 +385,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'loss_params': dictionary with common keys to be used by all Walker instances. 
                               E.g. for Chi2 this would be 'cov_mat' containing covariance matrix of *full* data set.
 
+            **kwargs will be passed directly (and only) to 'model' instance.
+
             Methods:
             -- climb: trains all requested walkers on given data set, starting at Latin hypercube of initial locations.
             -- gather: gathers outputs from all walkers and stores in single file.
@@ -373,34 +409,59 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.survey_loss = None
         self.survey_dLdtheta = None
         ####
+        # will be set by self.survey()
+        self.Dtheta_loss = np.zeros(self.n_params)
+        ####
         # will be set by self.distribute()
         self.N_walker = None
         self.walker_layers = None
         self.lrates = None
         ####
-        # give this to user-control if needed
+        # give these to user-control if needed
         # no. of surveys to average over when updating param ranges
         self.n_iter_survey = 5
+        # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
+        self.N_traverse = 5.0 # 7.0 
+
+        # these will be updated while training
+        self.N_evals_model = 0
+        self.N_evals_deriv = 0
 
         # internally set
         self.N_survey = int(self.survey_frac*self.N_evals_max)
         self.N_survey_tot = self.N_survey*self.n_iter_survey # will be updated to actual number in self.survey()
         self.N_evals_max_walk = self.N_evals_max - self.N_survey_tot
-        self.N_walker = 3*self.n_params 
         self.N_survey_lhc_layers = (self.N_survey // 2) + 1
-        # min,max values of lrate
-        self.lrate_min = 0.15
-        self.lrate_max = 0.15 # will be changed by self.set_lrates()
-        self.lrate_largest_max = 0.25
                 
         # array of adam parameter values for different walkers.
         # will be set by self.set_adams() called by self.distribute()
         self.B1_adams = None
         self.B2_adams = None
         # min,max values
-        self.B1_adam_min,self.B1_adam_max = 0.75,0.9 # (default 0.9) 0.75,0.9
-        self.B2_adam_min,self.B2_adam_max = 0.75,(1-1e-6) # (default 0.999) 0.75,1-1e-6
+        # # B2 -- outer walkers: default Adam; inner walkers: close to mini-batch SGD; B1 -- default Adam
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-6) # (default 0.999)
+        # B1 -- outer walkers: default Adam; inner walkers: close to mini-batch SGD; B2 -- default Adam
+        self.B1_adam_min,self.B1_adam_max = 0.01,0.9 # (default 0.9)
+        self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
+        # # all walkers: B2 default adam; B1 close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.01 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
+        # # all walkers: B1 default adam; B2 close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-6),(1-1e-6) # (default 0.999)
+        # # all walkers: close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.01 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-6),(1-1e-6) # (default 0.999)
+        # # all walkers: default Adam
+        # self.B1_adam_min,self.B1_adam_max = 0.9,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-3) # (default 0.999)
+        # # outer walkers: default Adam; inner walkers: close to mini-batch SGD
+        # self.B1_adam_min,self.B1_adam_max = 0.01,0.9 # (default 0.9)
+        # self.B2_adam_min,self.B2_adam_max = (1-1e-3),(1-1e-6) # (default 0.999)
 
+        self.lrate_max_fac = 1.0 # set > 1 to activate lrate variation (default 1.0)
+        
         self.X = data_pack.get('X',None)
         self.Y = data_pack.get('Y',None)
         
@@ -409,8 +470,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_mins = np.array(self.param_mins)
         self.param_maxs = np.array(self.param_maxs)
         
-        self.model_inst = self.Model(n_params=self.n_params)#,adam=self.adam,
-                                     # B1_adam=self.B1_adam,B2_adam=self.B2_adam,eps_adam=self.eps_adam)
+        self.model_inst = self.Model(n_params=self.n_params,**kwargs)
         
         self.val_frac = data_pack.get('val_frac',0.2) # fraction of input data to use for validation
         
@@ -420,14 +480,15 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.verbose = data_pack.get('verbose',True)
         self.logfile = data_pack.get('logfile',None)
 
-        self.rng = np.random.RandomState(self.seed) # only used in self.adjust_survey for shuffling param directions
+        self.rng = np.random.RandomState(self.seed)
+        # used in self.adjust_survey for shuffling param directions and in self.initialize_walkers to downsample walker locations
         
         if self.verbose:
             self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))        
         self.distributed = 0 # will be set to 1 upon successful call to self.distribute().
-        self.mb_count = int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
+        self.mb_count = 2 #int(np.sqrt(self.X.shape[1])) # passed to Walker after distribution
 
         #######################
         # Following strategies for survey adjustment were considered and discarded:
@@ -463,9 +524,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         if self.Y is None:
             raise ValueError("Need to specify valid data Y in Mountaineer.")
-        
-        if self.N_evals_max_walk <= self.N_walker:        
-            raise Exception('{0:d} evals is not enough for exploration.'.format(self.N_evals_max_walk))
         
         return
     ###########################################
@@ -537,7 +595,17 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # reset ranges for next iteration
             self.param_maxs = copy.deepcopy(self.param_maxs_old)
             self.param_mins = copy.deepcopy(self.param_mins_old)
+            # accumulate typical loss variation scale along each parameter direction
+            dtheta_loss_this = np.median(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
+            dtheta_loss_this[dtheta_loss_this > 1e15] = 0.0
+            self.Dtheta_loss += dtheta_loss_this
+            # if self.verbose:
+            #     self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(dtheta_loss_this[p]) for p in range(self.n_params)])+']',self.logfile)
 
+        self.Dtheta_loss /= self.n_iter_survey
+        if self.verbose:
+            self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',self.logfile)
+            
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
         
@@ -588,10 +656,12 @@ class Mountaineer(Module,MLUtilities,Utilities):
         for s in range(self.N_survey):
             model_survey.params = survey_params[s:s+1,:].T # shape (n_params,1)
             # calculate total loss at survey parameters
-            Ypred = model_survey.forward(self.X) 
+            Ypred = model_survey.forward(self.X)
+            self.N_evals_model += 1
             survey_loss[s] = loss.forward(Ypred)
             dLdm = loss.backward()
             model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
+            self.N_evals_deriv += 1
             survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
@@ -676,6 +746,136 @@ class Mountaineer(Module,MLUtilities,Utilities):
         
         return 
     ###########################################
+
+    # ###########################################
+    # def initialize_walkers(self):
+    #     """ Initialize walkers by choosing best of existing LHC survey locations. """
+
+    #     if self.verbose:
+    #         self.print_this('... ... selecting {0:d} lowest loss locations from survey'.format(self.N_walker),self.logfile)
+    #     choose = self.survey_loss.argsort()[:self.N_walker] # indices of N_walker smallest loss values
+    #     pins = self.survey_params[choose]
+    #     walker_layers = self.survey_loss[choose] # store loss values for conversion to integers
+            
+    #     if self.verbose:
+    #         self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
+    #     walker_layers = (walker_layers.max() - walker_layers)/(walker_layers.max() - walker_layers.min() + 1e-15) # reversed order and normalized
+    #     walker_layers = (np.rint(walker_layers*self.N_walker/2)).astype(int)
+    #     if walker_layers.max() < 0:
+    #         if self.verbose:
+    #             self.print_this('... ... ... problem in setting walker layers: all layers set to 1',self.logfile)
+    #         walker_layers = np.ones(pins.shape[0],dtype=int)
+        
+    #     return pins,walker_layers
+    # ###########################################
+
+    ###########################################
+    def initialize_walkers(self):
+        """ Initialize walkers by importance sampling using existing LHC survey samples. """
+        oversamp = self.n_iter_survey
+        if self.verbose:
+            self.print_this('... ... generating LHC with oversampling by factor {0:d}'.format(oversamp),self.logfile)
+        pins = self.gen_latin_hypercube(Nsamp=oversamp*self.N_walker,dim=self.n_params,return_layers=False)
+
+        if self.verbose:
+            self.print_this('... ... compressing survey to final unit cube',self.logfile)
+        # map survey to unit cube defined by final pmin,pmax values
+        sparams = self.survey_params.copy()
+        for p in range(self.n_params):
+            sparams[:,p] -= self.param_mins[p]
+            sparams[:,p] /= (self.param_maxs[p] - self.param_mins[p])
+
+        if self.verbose:
+            self.print_this('... ... estimating loss by nearest nbr in survey',self.logfile)
+        pins_like = np.zeros(pins.shape[0])
+        tree = spatial.KDTree(sparams)
+        dist_nbr,idx_nbr = tree.query(pins,k=1)#,workers=NPROC)
+        # dist_nbr: float (N_walker,) distances to nearest survey nbr for each walker
+        # idx_nbr : int (N_walker,) indices of nearest survey nbr for each walker
+        for w in range(pins.shape[0]):
+            pins_like[w] = self.survey_loss[idx_nbr[w]]
+        walker_layers = pins_like.copy() # store loss values for conversion to integers
+
+        if self.verbose:
+            self.print_this('... ... downsampling walkers proportionally to exp(-loss/2)',self.logfile)
+        pins_like = np.exp(-0.5*(pins_like - self.survey_loss.min())) # so global minimum loss assigned value 1, rest between 0..1
+        # print('... ... ... top {0:d} walkers'.format(self.N_walker))
+        # for w in np.argsort(walker_layers)[:self.N_walker]:
+        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
+        keep_this = np.ones(pins.shape[0],dtype=bool)
+        u = self.rng.rand(pins.shape[0])
+        keep_this[u >= pins_like] = False # keep with probability pins_like
+
+        keep_sum = keep_this.sum()
+        if keep_sum < self.N_walker:
+            # add a few
+            N_add = self.N_walker - keep_sum
+            if self.verbose:
+                self.print_this('... ... ... adjusting by including {0:d} extra (top-weighted)'.format(N_add),self.logfile)
+            id_false = np.where(keep_this == False)[0]
+            id_switch = np.argsort(pins_like[id_false])[-N_add:] #self.rng.choice(id_false.size,size=N_add,replace=False)
+            for s in id_switch:
+                keep_this[id_false[s]] = True
+            if keep_this.sum() != self.N_walker:
+                raise Exception('Problem in including extra locations')
+        else:
+            # discard a few
+            N_throw = keep_sum - self.N_walker
+            if self.verbose:
+                self.print_this('... ... ... adjusting by discarding {0:d} extra (random)'.format(N_throw),self.logfile)
+            id_true = np.where(keep_this == True)[0]
+            id_switch = self.rng.choice(id_true.size,size=N_throw,replace=False)
+            for s in id_switch:
+                keep_this[id_true[s]] = False
+            if keep_this.sum() != self.N_walker:
+                raise Exception('Problem in discarding extra locations')
+
+        pins = pins[keep_this]
+        pins_like = pins_like[keep_this]
+        walker_layers = walker_layers[keep_this] # loss values
+        print('... ... ... selected {0:d} walkers'.format(self.N_walker))
+        # for w in range(pins.shape[0]):
+        #     print(w+1,walker_layers[w],pins_like[w],pins[w])
+            
+        if self.verbose:
+            self.print_this('... ... converting walker layers to integers proportional to loss.max() - loss (so outermost = 0)',self.logfile)
+        walker_layers = (walker_layers.max() - walker_layers)/(walker_layers.max() - walker_layers.min() + 1e-15) # reversed order and normalized
+        walker_layers = (np.rint(walker_layers*self.N_walker/2)).astype(int)
+        # for w in range(walker_layers.size):
+        #     print(w,walker_layers[w])
+        if walker_layers.max() < 0:
+            if self.verbose:
+                self.print_this('... ... ... problem in setting walker layers: all layers set to 1',self.logfile)
+            walker_layers = np.ones(pins.shape[0],dtype=int)
+            
+        if self.verbose:
+            self.print_this('... ... expanding walker params from unit cube to max,min values',self.logfile)
+        for p in range(self.n_params):
+            pins[:,p] *= (self.param_maxs[p] - self.param_mins[p])
+            pins[:,p] += self.param_mins[p]
+        
+        return pins,walker_layers
+    ###########################################
+    
+    ###########################################
+    def calc_N_walker(self):
+        """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
+        #####################
+        # adjusted by trial and error
+        N_walker_factor = 30.0 # 15.0
+        #####################
+
+        likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
+        Vgeom = 1.0
+        for p in range(self.n_params):
+            Vgeom *= (self.param_maxs_old[p] - self.param_mins_old[p])
+            
+        Vstat = Vgeom*likelihood.mean()
+        N_walker = N_walker_factor*Vstat**(1/self.n_params)
+        
+        return int(np.rint(N_walker))
+    ###########################################
+
     
     ###########################################
     def distribute(self):
@@ -687,9 +887,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
             ranges = np.loadtxt(self.range_file).T
             self.param_mins = ranges[0].copy()
             self.param_maxs = ranges[1].copy()
+            # figure out value of self.N_walkers from existing filenames
+            w = 0
+            while True:
+                if (not os.path.isfile(self.file_stem + '_w' + str(w+1) + '.pkl')):
+                    self.N_walker = w
+                    break
+                else:
+                    w += 1
         else:
             if self.verbose:
                 self.print_this('Distributing available resources ({0:d} evals)...'.format(self.N_evals_max_walk),self.logfile)
+            self.N_walker = self.calc_N_walker()        
+        
+            if self.N_evals_max_walk <= self.N_walker:        
+                raise Exception('{0:d} evals is not enough for exploration with {1:d} walkers.'.format(self.N_evals_max_walk,self.N_walker))
         
         if self.verbose:
             self.print_this('... initialising {0:d} walkers'.format(self.N_walker),self.logfile)
@@ -700,8 +912,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
                    'seed':self.seed,'verbose':False,'logfile':self.logfile}
 
         self.walkers = []
-        pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
-                                                           param_mins=self.param_mins,param_maxs=self.param_maxs)
+        if self.walks_exist:
+            pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
+                                                               param_mins=self.param_mins,param_maxs=self.param_maxs)
+        else:
+            pins,self.walker_layers = self.initialize_walkers()
+            # pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
+            #                                                    param_mins=self.param_mins,param_maxs=self.param_maxs)
         self.set_adams() # will set self.B1_adams,self.B2_adams
         
         for w in range(self.N_walker):
@@ -728,9 +945,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('... ...   max_epoch = {0:d}'.format(self.max_epoch),self.logfile)
                 self.print_this('... ...    mb_count = {0:d}'.format(self.mb_count),self.logfile)
                 self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
-                self.print_this('... ...      lrates = {0:.4f} to {1:.4f} (outside inwards)'.format(self.lrate_max,self.lrate_min),self.logfile)
-                self.print_this('... ...  1-B1_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B1_adams.max(),1-self.B1_adams.min()),self.logfile)
-                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.max(),1-self.B2_adams.min()),self.logfile)
+                self.print_this('... ...      lrates (outside inwards)',self.logfile)
+                for p in range(self.n_params):
+                    self.print_this('... ... ...    p{0:d} : {1:.4f} to {2:.4f}'.format(p,self.lrates[:,p].max(),self.lrates[:,p].min()),self.logfile)                
+                self.print_this('... ...    B1_adams = {0:.3f} to {1:.3f} (outside inwards)'.format(self.B1_adams.max(),self.B1_adams.min()),self.logfile)
+                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.min(),1-self.B2_adams.max()),self.logfile)
 
             self.params_train = []
             for w in range(self.N_walker):
@@ -739,9 +958,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
                                           'lrate':self.lrates[w],
                                           'loss_params':self.loss_params,
                                           'check_after':self.check_after})
-        ##############        
-        # DO SANITY CHECK ON VALUES OF B1_ADAM, B2_ADAM and LRATE FOR EACH WALKER
-        ##############
         
         self.distributed = 1
         return 
@@ -750,12 +966,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
     def set_adams(self):
         """ Set adam parameters B1 and B2 for each walker based on its LHC layer, 
-            with outer layers having larger values of B1,B2 to make walks more ridge-directed. 
+            with outer layers having larger values of B1 and (1-B2) to make 
+            outer walks behave with default adam settings (i.e., more ridge-directed) and
+            inner walks behave close to mini-batch SGD. 
         """
         if self.N_walker is None:
             raise Exception('set_adams() can only be called within or after distribute() in Mountaineer.')
         B1_vals = np.linspace(self.B1_adam_max,self.B1_adam_min,self.walker_layers.max()+1)
-        B2_vals = np.linspace(self.B2_adam_max,self.B2_adam_min,self.walker_layers.max()+1)
+        B2_vals = np.linspace(self.B2_adam_min,self.B2_adam_max,self.walker_layers.max()+1)
         self.B1_adams = np.zeros(self.N_walker)
         self.B2_adams = np.zeros(self.N_walker)
         for w in range(self.N_walker):
@@ -769,20 +987,30 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Set learning rate for each walker based on its LHC layer, with outer layers having higher rates. """
         if self.N_walker is None:
             raise Exception('set_lrates() can only be called within or after distribute() in Mountaineer.')
+        
+        # min,max values of lrate
+        # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
+        # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
+        lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
+        self.lrate_min = lrate_typical # 1e-2 # 0.15
+        self.lrate_max = lrate_typical # 1e-2 # 0.15 # will be changed below
+        self.lrate_largest_max = self.lrate_max_fac*lrate_typical # 1e-2 # 0.25
 
         ranges = self.param_maxs_old - self.param_mins_old
         changes_pmaxs = np.fabs(self.param_maxs - self.param_maxs_old)/ranges
         changes_pmins = np.fabs(self.param_mins - self.param_mins_old)/ranges
         # above are changes in maxs,mins, relative to old ranges
-        max_rel_change = np.max([changes_pmaxs.max(),changes_pmins.max()]) # largest relative change
-        self.lrate_max = np.min([self.lrate_largest_max,self.lrate_max*(1+max_rel_change)])
-        self.lrate_max = np.max([self.lrate_min,self.lrate_max])
-        
-        lrate_vals = np.linspace(self.lrate_max,self.lrate_min,self.walker_layers.max()+1)
-        # linearly change from min (default 0.15) to max (minimum 0.25) from layer = walker_layers.max()+1 to 0
-        self.lrates = np.zeros(self.N_walker)
+        max_rel_change = np.maximum(changes_pmaxs,changes_pmins) # vector of largest relative change
+        self.lrate_max = np.minimum(self.lrate_largest_max,self.lrate_max*(1+max_rel_change))
+        self.lrate_max = np.maximum(self.lrate_min,self.lrate_max)
+
+        lrate_vals = np.zeros((self.walker_layers.max()+1,self.n_params))
+        for p in range(self.n_params):
+            lrate_vals[:,p] = np.linspace(self.lrate_max[p],self.lrate_min[p],self.walker_layers.max()+1)
+        self.lrates = np.zeros((self.N_walker,self.n_params))
         for w in range(self.N_walker):
-            self.lrates[w] = lrate_vals[self.walker_layers[w]]
+            # set lrate with additional factor to account for adam parameter variations
+            self.lrates[w] = lrate_vals[self.walker_layers[w]]#*np.sqrt(1-self.B2_adams[w])/(1-self.B1_adams[w]) # including B-dep facs makes lrates smaller
         return
     ###########################################    
 
@@ -799,6 +1027,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         for w in range(self.N_walker):
             self.walkers[w].train(params=self.params_train[w])
+            self.N_evals_model += self.walkers[w].N_evals_model
+            self.N_evals_deriv += self.walkers[w].N_evals_deriv
             if self.verbose:
                 self.status_bar(w,self.N_walker)
         
@@ -856,7 +1086,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.print_this('Writing to file: '+self.walks_file,self.logfile)            
             with open(self.walks_file,'w') as f:
-                f.write('# loss | a0 ... a{0:d}\n'.format(self.n_params))
+                f.write('# loss | a0 ... a{0:d}\n'.format(self.n_params-1))
         else:
             if self.verbose:
                 self.print_this('Walks exist, nothing to write.',self.logfile)            
