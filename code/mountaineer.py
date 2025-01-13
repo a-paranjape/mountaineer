@@ -421,7 +421,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # no. of surveys to average over when updating param ranges
         self.n_iter_survey = 5
         # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
-        self.N_traverse = 5.0 # 7.0 
+        self.N_traverse = 1.0 # 7.0 
 
         # these will be updated while training
         self.N_evals_model = 0
