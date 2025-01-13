@@ -1,0 +1,168 @@
+ (-26.619831961022346, {'tau_e': 0.0532452021880309, 'twolone': 0.39345, 'twoaone': 0.65442, 'l0': -0.684225, 'l1': 0.196725, 'a0': 0.61655, 'a1': 0.32721})
+ 2025-01-13 11:10:38,329 [output] Output to be read-from/written-into folder 'cobaya_chains/chains', with prefix 'reion_uvlf_4p'
+ 2025-01-13 11:10:40,297 [fb_joint_lf_qhi] Initialized external likelihood.
+ 2025-01-13 11:10:40,304 [mcmc] Getting initial point... (this may take a few seconds)
+ 2025-01-13 11:10:40,526 [model] Measuring speeds... (this may take a few seconds)
+ 2025-01-13 11:10:41,157 [model] Setting measured speeds (per sec): {fb_joint_LF_QHI: 4.87}
+ 2025-01-13 11:10:41,157 [mcmc] Initial point: lsum:-0.19, ldiff:-0.92, l2:13, l3:2.1
+ 2025-01-13 11:10:41,157 [mcmc] Covariance matrix not present. We will start learning the covariance of the proposal earlier: R-1 = 30 (would be 2 if all params loaded).
+ 2025-01-13 11:10:41,168 [mcmc] Sampling!
+ 2025-01-13 11:10:41,402 [mcmc] Progress @ 2025-01-13 11:10:41 : 1 steps taken, and 0 accepted.
+ 2025-01-13 11:11:41,481 [mcmc] Progress @ 2025-01-13 11:11:41 : 243 steps taken, and 128 accepted.
+ 2025-01-13 11:11:53,860 [mcmc] Learn + convergence test @ 160 samples accepted.
+ 2025-01-13 11:11:53,867 [mcmc]  - Acceptance rate: 0.533
+ 2025-01-13 11:11:53,869 [mcmc]  - Convergence of means: R-1 = 5.365484 after 128 accepted steps
+ 2025-01-13 11:11:53,869 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:12:41,601 [mcmc] Progress @ 2025-01-13 11:12:41 : 483 steps taken, and 260 accepted.
+ 2025-01-13 11:13:15,490 [mcmc] Learn + convergence test @ 320 samples accepted.
+ 2025-01-13 11:13:15,493 [mcmc]  - Acceptance rate: 0.500
+ 2025-01-13 11:13:15,494 [mcmc]  - Convergence of means: R-1 = 10.843390 after 256 accepted steps
+ 2025-01-13 11:13:15,494 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:13:41,610 [mcmc] Progress @ 2025-01-13 11:13:41 : 729 steps taken, and 351 accepted.
+ 2025-01-13 11:14:41,636 [mcmc] Progress @ 2025-01-13 11:14:41 : 983 steps taken, and 417 accepted.
+ 2025-01-13 11:15:30,511 [mcmc] Learn + convergence test @ 480 samples accepted.
+ 2025-01-13 11:15:30,514 [mcmc]  - Acceptance rate: 0.378
+ 2025-01-13 11:15:30,515 [mcmc]  - Convergence of means: R-1 = 14.308723 after 384 accepted steps
+ 2025-01-13 11:15:30,515 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:15:41,723 [mcmc] Progress @ 2025-01-13 11:15:41 : 1245 steps taken, and 497 accepted.
+ 2025-01-13 11:16:41,924 [mcmc] Progress @ 2025-01-13 11:16:41 : 1527 steps taken, and 565 accepted.
+ 2025-01-13 11:17:41,931 [mcmc] Progress @ 2025-01-13 11:17:41 : 1803 steps taken, and 639 accepted.
+ 2025-01-13 11:17:42,170 [mcmc] Learn + convergence test @ 640 samples accepted.
+ 2025-01-13 11:17:42,174 [mcmc]  - Acceptance rate: 0.328
+ 2025-01-13 11:17:42,174 [mcmc]  - Convergence of means: R-1 = 8.466038 after 512 accepted steps
+ 2025-01-13 11:17:42,175 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:18:41,966 [mcmc] Progress @ 2025-01-13 11:18:41 : 2075 steps taken, and 687 accepted.
+ 2025-01-13 11:19:41,972 [mcmc] Progress @ 2025-01-13 11:19:41 : 2351 steps taken, and 759 accepted.
+ 2025-01-13 11:20:39,397 [mcmc] Learn + convergence test @ 800 samples accepted.
+ 2025-01-13 11:20:39,401 [mcmc]  - Acceptance rate: 0.276
+ 2025-01-13 11:20:39,401 [mcmc]  - Convergence of means: R-1 = 7.172521 after 640 accepted steps
+ 2025-01-13 11:20:39,401 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:20:42,071 [mcmc] Progress @ 2025-01-13 11:20:42 : 2618 steps taken, and 802 accepted.
+ 2025-01-13 11:21:42,123 [mcmc] Progress @ 2025-01-13 11:21:42 : 2887 steps taken, and 870 accepted.
+ 2025-01-13 11:22:42,237 [mcmc] Progress @ 2025-01-13 11:22:42 : 3154 steps taken, and 930 accepted.
+ 2025-01-13 11:23:16,479 [mcmc] Learn + convergence test @ 960 samples accepted.
+ 2025-01-13 11:23:16,482 [mcmc]  - Acceptance rate: 0.260
+ 2025-01-13 11:23:16,483 [mcmc]  - Convergence of means: R-1 = 1.539795 after 768 accepted steps
+ 2025-01-13 11:23:16,483 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:23:42,326 [mcmc] Progress @ 2025-01-13 11:23:42 : 3425 steps taken, and 998 accepted.
+ 2025-01-13 11:24:42,508 [mcmc] Progress @ 2025-01-13 11:24:42 : 3695 steps taken, and 1067 accepted.
+ 2025-01-13 11:25:27,656 [mcmc] Learn + convergence test @ 1120 samples accepted.
+ 2025-01-13 11:25:27,660 [mcmc]  - Acceptance rate: 0.257
+ 2025-01-13 11:25:27,660 [mcmc]  - Convergence of means: R-1 = 0.639756 after 896 accepted steps
+ 2025-01-13 11:25:27,660 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:25:42,550 [mcmc] Progress @ 2025-01-13 11:25:42 : 3976 steps taken, and 1140 accepted.
+ 2025-01-13 11:26:42,733 [mcmc] Progress @ 2025-01-13 11:26:42 : 4258 steps taken, and 1202 accepted.
+ 2025-01-13 11:27:42,777 [mcmc] Progress @ 2025-01-13 11:27:42 : 4529 steps taken, and 1268 accepted.
+ 2025-01-13 11:27:50,734 [mcmc] Learn + convergence test @ 1280 samples accepted.
+ 2025-01-13 11:27:50,738 [mcmc]  - Acceptance rate: 0.250
+ 2025-01-13 11:27:50,739 [mcmc]  - Convergence of means: R-1 = 0.288005 after 1024 accepted steps
+ 2025-01-13 11:27:50,739 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:28:42,822 [mcmc] Progress @ 2025-01-13 11:28:42 : 4803 steps taken, and 1345 accepted.
+ 2025-01-13 11:29:42,894 [mcmc] Progress @ 2025-01-13 11:29:42 : 5079 steps taken, and 1412 accepted.
+ 2025-01-13 11:29:58,242 [mcmc] Learn + convergence test @ 1440 samples accepted.
+ 2025-01-13 11:29:58,246 [mcmc]  - Acceptance rate: 0.250
+ 2025-01-13 11:29:58,247 [mcmc]  - Convergence of means: R-1 = 0.101041 after 1152 accepted steps
+ 2025-01-13 11:29:58,247 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:30:43,029 [mcmc] Progress @ 2025-01-13 11:30:43 : 5348 steps taken, and 1507 accepted.
+ 2025-01-13 11:31:43,112 [mcmc] Progress @ 2025-01-13 11:31:43 : 5611 steps taken, and 1587 accepted.
+ 2025-01-13 11:31:56,455 [mcmc] Learn + convergence test @ 1600 samples accepted.
+ 2025-01-13 11:31:56,459 [mcmc]  - Acceptance rate: 0.253
+ 2025-01-13 11:31:56,459 [mcmc]  - Convergence of means: R-1 = 0.023629 after 1280 accepted steps
+ 2025-01-13 11:31:56,459 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:32:43,239 [mcmc] Progress @ 2025-01-13 11:32:43 : 5893 steps taken, and 1658 accepted.
+ 2025-01-13 11:33:43,517 [mcmc] Progress @ 2025-01-13 11:33:43 : 6154 steps taken, and 1738 accepted.
+ 2025-01-13 11:34:05,957 [mcmc] Learn + convergence test @ 1760 samples accepted.
+ 2025-01-13 11:34:05,961 [mcmc]  - Acceptance rate: 0.256
+ 2025-01-13 11:34:05,961 [mcmc]  - Convergence of means: R-1 = 0.027850 after 1408 accepted steps
+ 2025-01-13 11:34:05,961 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:34:43,673 [mcmc] Progress @ 2025-01-13 11:34:43 : 6417 steps taken, and 1800 accepted.
+ 2025-01-13 11:35:43,828 [mcmc] Progress @ 2025-01-13 11:35:43 : 6645 steps taken, and 1856 accepted.
+ 2025-01-13 11:36:44,071 [mcmc] Progress @ 2025-01-13 11:36:44 : 6845 steps taken, and 1899 accepted.
+ 2025-01-13 11:37:14,072 [mcmc] Learn + convergence test @ 1920 samples accepted.
+ 2025-01-13 11:37:14,077 [mcmc]  - Acceptance rate: 0.253
+ 2025-01-13 11:37:14,077 [mcmc]  - Convergence of means: R-1 = 0.023355 after 1536 accepted steps
+ 2025-01-13 11:37:14,078 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:37:44,263 [mcmc] Progress @ 2025-01-13 11:37:44 : 7034 steps taken, and 1961 accepted.
+ 2025-01-13 11:38:44,584 [mcmc] Progress @ 2025-01-13 11:38:44 : 7230 steps taken, and 2018 accepted.
+ 2025-01-13 11:39:44,812 [mcmc] Progress @ 2025-01-13 11:39:44 : 7447 steps taken, and 2061 accepted.
+ 2025-01-13 11:40:08,032 [mcmc] Learn + convergence test @ 2080 samples accepted.
+ 2025-01-13 11:40:08,037 [mcmc]  - Acceptance rate: 0.254
+ 2025-01-13 11:40:08,038 [mcmc]  - Convergence of means: R-1 = 0.009025 after 1664 accepted steps
+ 2025-01-13 11:40:08,038 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:40:45,058 [mcmc] Progress @ 2025-01-13 11:40:45 : 7651 steps taken, and 2113 accepted.
+ 2025-01-13 11:41:45,310 [mcmc] Progress @ 2025-01-13 11:41:45 : 7858 steps taken, and 2168 accepted.
+ 2025-01-13 11:42:45,419 [mcmc] Progress @ 2025-01-13 11:42:45 : 8063 steps taken, and 2228 accepted.
+ 2025-01-13 11:42:56,053 [mcmc] Learn + convergence test @ 2240 samples accepted.
+ 2025-01-13 11:42:56,059 [mcmc]  - Acceptance rate: 0.255
+ 2025-01-13 11:42:56,060 [mcmc]  - Convergence of means: R-1 = 0.035579 after 1792 accepted steps
+ 2025-01-13 11:42:56,060 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:43:45,588 [mcmc] Progress @ 2025-01-13 11:43:45 : 8263 steps taken, and 2287 accepted.
+ 2025-01-13 11:44:45,795 [mcmc] Progress @ 2025-01-13 11:44:45 : 8476 steps taken, and 2351 accepted.
+ 2025-01-13 11:45:35,266 [mcmc] Learn + convergence test @ 2400 samples accepted.
+ 2025-01-13 11:45:35,271 [mcmc]  - Acceptance rate: 0.258
+ 2025-01-13 11:45:35,271 [mcmc]  - Convergence of means: R-1 = 0.027338 after 1920 accepted steps
+ 2025-01-13 11:45:35,271 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:45:45,818 [mcmc] Progress @ 2025-01-13 11:45:45 : 8680 steps taken, and 2409 accepted.
+ 2025-01-13 11:46:46,032 [mcmc] Progress @ 2025-01-13 11:46:46 : 8882 steps taken, and 2464 accepted.
+ 2025-01-13 11:47:46,143 [mcmc] Progress @ 2025-01-13 11:47:46 : 9073 steps taken, and 2515 accepted.
+ 2025-01-13 11:48:36,899 [mcmc] Learn + convergence test @ 2560 samples accepted.
+ 2025-01-13 11:48:36,904 [mcmc]  - Acceptance rate: 0.258
+ 2025-01-13 11:48:36,904 [mcmc]  - Convergence of means: R-1 = 0.017594 after 2048 accepted steps
+ 2025-01-13 11:48:36,904 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:48:46,201 [mcmc] Progress @ 2025-01-13 11:48:46 : 9264 steps taken, and 2567 accepted.
+ 2025-01-13 11:49:46,305 [mcmc] Progress @ 2025-01-13 11:49:46 : 9469 steps taken, and 2632 accepted.
+ 2025-01-13 11:50:46,392 [mcmc] Progress @ 2025-01-13 11:50:46 : 9664 steps taken, and 2688 accepted.
+ 2025-01-13 11:51:16,363 [mcmc] Learn + convergence test @ 2720 samples accepted.
+ 2025-01-13 11:51:16,368 [mcmc]  - Acceptance rate: 0.262
+ 2025-01-13 11:51:16,369 [mcmc]  - Convergence of means: R-1 = 0.023785 after 2176 accepted steps
+ 2025-01-13 11:51:16,369 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:51:46,486 [mcmc] Progress @ 2025-01-13 11:51:46 : 9861 steps taken, and 2756 accepted.
+ 2025-01-13 11:52:46,597 [mcmc] Progress @ 2025-01-13 11:52:46 : 10066 steps taken, and 2819 accepted.
+ 2025-01-13 11:53:46,684 [mcmc] Progress @ 2025-01-13 11:53:46 : 10270 steps taken, and 2871 accepted.
+ 2025-01-13 11:54:00,370 [mcmc] Learn + convergence test @ 2880 samples accepted.
+ 2025-01-13 11:54:00,376 [mcmc]  - Acceptance rate: 0.263
+ 2025-01-13 11:54:00,378 [mcmc]  - Convergence of means: R-1 = 0.013366 after 2304 accepted steps
+ 2025-01-13 11:54:00,378 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:54:46,946 [mcmc] Progress @ 2025-01-13 11:54:46 : 10470 steps taken, and 2932 accepted.
+ 2025-01-13 11:55:47,224 [mcmc] Progress @ 2025-01-13 11:55:47 : 10665 steps taken, and 2993 accepted.
+ 2025-01-13 11:56:37,705 [mcmc] Learn + convergence test @ 3040 samples accepted.
+ 2025-01-13 11:56:37,711 [mcmc]  - Acceptance rate: 0.266
+ 2025-01-13 11:56:37,712 [mcmc]  - Convergence of means: R-1 = 0.024018 after 2432 accepted steps
+ 2025-01-13 11:56:37,712 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:56:47,255 [mcmc] Progress @ 2025-01-13 11:56:47 : 10868 steps taken, and 3055 accepted.
+ 2025-01-13 11:57:47,383 [mcmc] Progress @ 2025-01-13 11:57:47 : 11074 steps taken, and 3109 accepted.
+ 2025-01-13 11:58:47,630 [mcmc] Progress @ 2025-01-13 11:58:47 : 11260 steps taken, and 3171 accepted.
+ 2025-01-13 11:59:17,653 [mcmc] Learn + convergence test @ 3200 samples accepted.
+ 2025-01-13 11:59:17,658 [mcmc]  - Acceptance rate: 0.268
+ 2025-01-13 11:59:17,659 [mcmc]  - Convergence of means: R-1 = 0.032925 after 2560 accepted steps
+ 2025-01-13 11:59:17,659 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 11:59:47,839 [mcmc] Progress @ 2025-01-13 11:59:47 : 11463 steps taken, and 3231 accepted.
+ 2025-01-13 12:00:47,953 [mcmc] Progress @ 2025-01-13 12:00:47 : 11670 steps taken, and 3290 accepted.
+ 2025-01-13 12:01:47,991 [mcmc] Progress @ 2025-01-13 12:01:47 : 11871 steps taken, and 3349 accepted.
+ 2025-01-13 12:02:00,772 [mcmc] Learn + convergence test @ 3360 samples accepted.
+ 2025-01-13 12:02:00,778 [mcmc]  - Acceptance rate: 0.271
+ 2025-01-13 12:02:00,779 [mcmc]  - Convergence of means: R-1 = 0.032357 after 2688 accepted steps
+ 2025-01-13 12:02:00,779 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 12:02:48,128 [mcmc] Progress @ 2025-01-13 12:02:48 : 12073 steps taken, and 3410 accepted.
+ 2025-01-13 12:03:48,169 [mcmc] Progress @ 2025-01-13 12:03:48 : 12276 steps taken, and 3474 accepted.
+ 2025-01-13 12:04:36,871 [mcmc] Learn + convergence test @ 3520 samples accepted.
+ 2025-01-13 12:04:36,875 [mcmc]  - Acceptance rate: 0.273
+ 2025-01-13 12:04:36,876 [mcmc]  - Convergence of means: R-1 = 0.011677 after 2816 accepted steps
+ 2025-01-13 12:04:36,876 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 12:04:48,257 [mcmc] Progress @ 2025-01-13 12:04:48 : 12474 steps taken, and 3536 accepted.
+ 2025-01-13 12:05:48,360 [mcmc] Progress @ 2025-01-13 12:05:48 : 12685 steps taken, and 3598 accepted.
+ 2025-01-13 12:06:48,627 [mcmc] Progress @ 2025-01-13 12:06:48 : 12885 steps taken, and 3658 accepted.
+ 2025-01-13 12:07:11,875 [mcmc] Learn + convergence test @ 3680 samples accepted.
+ 2025-01-13 12:07:11,880 [mcmc]  - Acceptance rate: 0.275
+ 2025-01-13 12:07:11,881 [mcmc]  - Convergence of means: R-1 = 0.009281 after 2944 accepted steps
+ 2025-01-13 12:07:11,881 [mcmc]  - Updated covariance matrix of proposal pdf.
+ 2025-01-13 12:07:48,883 [mcmc] Progress @ 2025-01-13 12:07:48 : 13081 steps taken, and 3715 accepted.
+ 2025-01-13 12:08:49,079 [mcmc] Progress @ 2025-01-13 12:08:49 : 13291 steps taken, and 3774 accepted.
+ 2025-01-13 12:09:49,193 [mcmc] Progress @ 2025-01-13 12:09:49 : 13494 steps taken, and 3831 accepted.
+ 2025-01-13 12:10:03,370 [mcmc] Learn + convergence test @ 3840 samples accepted.
+ 2025-01-13 12:10:03,378 [mcmc]  - Acceptance rate: 0.276
+ 2025-01-13 12:10:03,379 [mcmc]  - Convergence of means: R-1 = 0.008339 after 3072 accepted steps
+ 2025-01-13 12:10:03,395 [mcmc]  - Convergence of bounds: R-1 = 0.073836 after 3840 accepted steps
+ 2025-01-13 12:10:03,395 [mcmc] The run has converged!
+ 2025-01-13 12:10:03,397 [mcmc] Sampling complete after 3840 accepted steps.
+
