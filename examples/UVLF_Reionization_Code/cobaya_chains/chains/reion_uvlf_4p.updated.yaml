@@ -1,0 +1,124 @@
+theory: null
+likelihood:
+  fb_joint_LF_QHI:
+    type: []
+    speed: -1
+    stop_at_error: false
+    version: null
+    external: true
+    input_params:
+    - lsum
+    - ldiff
+    - l2
+    - l3
+    output_params:
+    - tau_e
+    - twolone
+    - twoaone
+    - l0
+    - l1
+    - a0
+    - a1
+params:
+  lsum:
+    prior:
+      min: -2.0
+      max: 2.0
+    ref: -0.19
+    proposal: 0.01
+    latex: \ell_{\varepsilon,0} + \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  ldiff:
+    prior:
+      min: -2.0
+      max: 1.0
+    ref: -0.92
+    proposal: 0.01
+    latex: \ell_{\varepsilon,0} - \dfrac{\ell_{\varepsilon,\mathrm{jump}}}{2}
+  l2:
+    prior:
+      min: 8.0
+      max: 18.0
+    ref: 13.0
+    proposal: 0.01
+    latex: z_\ast
+  l3:
+    prior:
+      min: 0.5
+      max: 6.0
+    ref: 2.1
+    proposal: 0.01
+    latex: \Delta z_\ast
+  tau_e:
+    min: 0.0
+    max: .inf
+    latex: \tau_{el}
+    derived: true
+  twolone:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,\mathrm{jump}}
+    derived: true
+  twoaone:
+    min: -.inf
+    max: .inf
+    latex: \alpha_\mathrm{jump}
+    derived: true
+  l0:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,0}
+    derived: true
+  l1:
+    min: -.inf
+    max: .inf
+    latex: \ell_{\varepsilon,\mathrm{jump}} / 2
+    derived: true
+  a0:
+    min: -.inf
+    max: .inf
+    latex: \alpha_0
+    derived: true
+  a1:
+    min: -.inf
+    max: .inf
+    latex: \alpha_\mathrm{jump} / 2
+    derived: true
+sampler:
+  mcmc:
+    burn_in: 0
+    max_tries: 10000
+    covmat: null
+    covmat_params: null
+    proposal_scale: 2.4
+    output_every: 60s
+    learn_every: 40d
+    temperature: 1
+    learn_proposal: true
+    learn_proposal_Rminus1_max: 2.0
+    learn_proposal_Rminus1_max_early: 30.0
+    learn_proposal_Rminus1_min: 0.0
+    max_samples: .inf
+    Rminus1_stop: 0.01
+    Rminus1_cl_stop: 0.1
+    Rminus1_cl_level: 0.95
+    Rminus1_single_split: 4
+    measure_speeds: true
+    oversample_power: 0.4
+    oversample_thin: true
+    drag: false
+    blocking:
+    - - 1
+      - - lsum
+        - ldiff
+        - l2
+        - l3
+    callback_function: null
+    callback_every: null
+    seed: null
+    check_every: null
+    oversample: null
+    drag_limits: null
+    fallback_covmat_scale: 4
+    version: 3.3.2
+output: reion_uvlf_4p
+version: 3.3.2
