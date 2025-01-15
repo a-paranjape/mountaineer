@@ -197,14 +197,18 @@ class Walker(Module,MLUtilities,Utilities):
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
             X_train_shuff = self.X_train[:,ind_shuff].copy() 
+            Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using initial/previous params
             for b in range(mb_count):
-                self.save(loss_params=loss_params) # will set keys to *full* data and save total loss
-                
                 loss_params['subset'] = self.ind_train[ind_shuff].copy()                
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
-                
-                Ypred = self.model.forward(X_train_shuff) # update activations
-                self.N_evals_model += 1
+
+                ################
+                # Ypred = self.model.forward(X_train_shuff) # update activations. MAIN ROLE is to set self.model.X = X_train_shuff, which is then used in self.model.backward
+                # self.N_evals_model += 1
+                ################
+                # re-use model evaluation from last self.save call
+                Ypred = Ypred_all[:,ind_shuff].copy()
+                self.model.X = X_train_shuff
                 loss_params['slice_b'] = sl # setting this ensures loss calculated for mini-batch
                 self.loss = self.loss_module(params=loss_params)
                 batch_loss = self.loss.forward(Ypred) # calculate current batch loss, update self.loss
@@ -213,15 +217,21 @@ class Walker(Module,MLUtilities,Utilities):
                 self.model.backward(dLdm) # update gradients
                 self.N_evals_deriv += 1
                 self.model.sgd_step(t,lrate) # gradient descent update
+                Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using mini-batch updated params                
                 
             # validation check
-            loss_params['subset'] = self.ind_val.copy()
-            loss_params['slice_b'] = np.s_[:]
-            self.loss = self.loss_module(params=loss_params)
-            Ypred_val = self.model.forward(self.X_val) # update activations. prediction for validation data
-            self.N_evals_model += 1
-            self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
             if t > check_after:
+                loss_params['subset'] = self.ind_val.copy()
+                loss_params['slice_b'] = np.s_[:]
+                self.loss = self.loss_module(params=loss_params)
+                #######################
+                # Ypred_val = self.model.forward(self.X_val) # update activations. MAIN ROLE is to set self.model.X = self.X_val, which is then used in self.model.backward
+                # self.N_evals_model += 1
+                #######################
+                # re-use model evaluation from last self.save call
+                Ypred_val = Ypred_all[:,self.ind_val].copy() # Ypred_all exists for last mini-batch step
+                self.model.X = self.X_val
+                self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
                 x = np.arange(t-check_after,t+1)
                 y = self.val_loss[x].copy()
                 # xbar = np.mean(x)
@@ -234,7 +244,9 @@ class Walker(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
                 
-        self.save(save_setup=True,loss_params=loss_params)
+        Ypred_all = self.save(save_setup=True,loss_params=loss_params)
+        del Ypred_all
+        gc.collect()
         
         if self.verbose:
             self.print_this("... ... done",self.logfile)
@@ -270,7 +282,7 @@ class Walker(Module,MLUtilities,Utilities):
             with open(self.file_stem + '.pkl', 'wb') as f:
                 pickle.dump(self.data_pack,f)
             
-        return    
+        return Ypred # can be re-used   
     ###########################################
 
     ###########################################
@@ -421,7 +433,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # no. of surveys to average over when updating param ranges
         self.n_iter_survey = 5
         # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
-        self.N_traverse = 1.0 # 7.0 
+        self.N_traverse = 5.0 # 7.0 
 
         # these will be updated while training
         self.N_evals_model = 0
