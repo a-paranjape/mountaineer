@@ -207,7 +207,7 @@ class Walker(Module,MLUtilities,Utilities):
                 # self.N_evals_model += 1
                 ################
                 # re-use model evaluation from last self.save call
-                Ypred = Ypred_all[:,ind_shuff].copy()
+                Ypred = Ypred_all[:,self.ind_train[ind_shuff]]
                 self.model.X = X_train_shuff
                 loss_params['slice_b'] = sl # setting this ensures loss calculated for mini-batch
                 self.loss = self.loss_module(params=loss_params)
@@ -229,7 +229,7 @@ class Walker(Module,MLUtilities,Utilities):
                 # self.N_evals_model += 1
                 #######################
                 # re-use model evaluation from last self.save call
-                Ypred_val = Ypred_all[:,self.ind_val].copy() # Ypred_all exists for last mini-batch step
+                Ypred_val = Ypred_all[:,self.ind_val] # Ypred_all exists for last mini-batch step
                 self.model.X = self.X_val
                 self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
                 x = np.arange(t-check_after,t+1)
@@ -874,7 +874,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
         #####################
         # adjusted by trial and error
-        N_walker_factor = 30.0 # 15.0
+        N_walker_factor = 45.0 # 15.0
         #####################
 
         likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
