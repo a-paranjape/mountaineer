@@ -220,18 +220,18 @@ class Walker(Module,MLUtilities,Utilities):
                 Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using mini-batch updated params                
                 
             # validation check
+            loss_params['subset'] = self.ind_val.copy()
+            loss_params['slice_b'] = np.s_[:]
+            self.loss = self.loss_module(params=loss_params)
+            #######################
+            # Ypred_val = self.model.forward(self.X_val) # update activations. MAIN ROLE is to set self.model.X = self.X_val, which is then used in self.model.backward
+            # self.N_evals_model += 1
+            #######################
+            # re-use model evaluation from last self.save call
+            Ypred_val = Ypred_all[:,self.ind_val] # Ypred_all exists for last mini-batch step
+            self.model.X = self.X_val
+            self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
             if t > check_after:
-                loss_params['subset'] = self.ind_val.copy()
-                loss_params['slice_b'] = np.s_[:]
-                self.loss = self.loss_module(params=loss_params)
-                #######################
-                # Ypred_val = self.model.forward(self.X_val) # update activations. MAIN ROLE is to set self.model.X = self.X_val, which is then used in self.model.backward
-                # self.N_evals_model += 1
-                #######################
-                # re-use model evaluation from last self.save call
-                Ypred_val = Ypred_all[:,self.ind_val] # Ypred_all exists for last mini-batch step
-                self.model.X = self.X_val
-                self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
                 x = np.arange(t-check_after,t+1)
                 y = self.val_loss[x].copy()
                 # xbar = np.mean(x)
@@ -874,7 +874,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
         #####################
         # adjusted by trial and error
-        N_walker_factor = 45.0 # 15.0
+        N_walker_factor = 45.0 # 45.0
         #####################
 
         likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
