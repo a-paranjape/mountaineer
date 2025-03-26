@@ -3,34 +3,9 @@ from cobaya.likelihood import Likelihood
 from cobaya.theory import Theory
 
 import sys
-sys.path.append('../')
-from mountaineer import Chi2
-
-#########################################
-class Chi2Like(Likelihood):
-    X = None
-    Y = None
-    cov_mat = None
-    #########################################
-    def initialize(self):
-        self.loss_params = {'Y_full':self.Y,'cov_mat':self.cov_mat}
-        self.loss = Chi2(params=self.loss_params)
-    #########################################
-
-    #########################################
-    def get_requirements(self):
-        """ Theory code should return model array. """
-        return {'model': None}
-    #########################################
-
-    #########################################
-    def logp(self,**params_values_dict):
-        model = self.provider.get_model()
-        chi2 = self.loss.forward(model) # ensure model has shape (1,n_samp)
-        return -0.5*chi2
-    #########################################
-
-#########################################
+from paths import ML_Path
+sys.path.append(ML_Path)
+from mlstats import Chi2Like
 
 
 #########################################
