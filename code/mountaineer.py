@@ -812,7 +812,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
         #####################
         # adjusted by trial and error
-        N_walker_factor = 45.0 # 45.0
+        N_walker_factor = 100.0 # 45.0
         #####################
 
         likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
@@ -1064,10 +1064,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
     ###########################################
     def load(self):
-        walks_file = self.file_stem + '_all.txt'
         if self.verbose:
-            self.print_this('Reading from file: '+walks_file,self.logfile)
-        data = np.loadtxt(walks_file).T # (n_params+1,n_steps_allwalks)
+            self.print_this('Reading from file: '+self.walks_file,self.logfile)
+        data = np.loadtxt(self.walks_file).T # (n_params+1,n_steps_allwalks)
 
         return data
     ###########################################
@@ -1088,14 +1087,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
         survey = survey[1:,:] # (n_params,N_survey_tot)
 
         cols = copy.deepcopy(self.cols)
-        plt.figure(figsize=(3,3))
+        plt.figure(figsize=(5,5))
         plt.xlabel('x')
         plt.ylabel('y')
         errors = np.sqrt(np.diag(self.loss_params['cov_mat']))
         imin = self.Y[0].argmin()
         imax = self.Y[0].argmax()
         plt.ylim(self.Y[0][imin]-1.5*errors[imin],self.Y[0][imax]+1.5*errors[imax])
-        plt.errorbar(self.X[0],self.Y[0],yerr=errors,ls='none',c='k',capsize=5,marker='o')
+        plt.errorbar(self.X[0],self.Y[0],yerr=errors,ls='none',c='k',capsize=5,marker='o',markersize=1,lw=0.5)
         for w in range(self.N_walker):
             col = next(cols)
             plt.plot(self.X[0],self.walkers[w].predict(self.X)[0],'-',color=col,lw=1)
