@@ -10,6 +10,7 @@ from mllib import MLUtilities
 from mlmodules import Module
 from mlstats import Chi2
 import copy,pickle
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import gc
@@ -316,6 +317,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'survey_frac': float, fraction of N_evals_max to use for initial survey. Set to zero to skip survey step. Default 0.1.
             -- 'file_stem': str, common stem for generating filenames for saving 
                                        (should include full path).
+            -- 'plot_dir': str or None. If not None, should be common stem for saving visualizations, including full path
+                                        (will be created if it doesn't exist). Visualizations will then be stored at this location.
+                                         Default None (i.e., don't store visualizations).
             -- 'model': sub-class of Model with user-defined calc_model() and calc_dmdtheta() methods.
             -- 'n_params': int, number of parameters in model.
             -- 'param_mins','param_maxs': array-likes of floats (n_params,) - guesses for minimum and maximum values for parameters 
@@ -346,6 +350,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.N_evals_max = data_pack.get('N_evals_max',100)
         self.survey_frac = data_pack.get('survey_frac',0.1)
         self.file_stem = data_pack.get('file_stem','walk')
+        self.plot_dir = data_pack.get('plot_dir',None)
         self.walks_file = self.file_stem + '_all.txt'
         self.range_file = self.file_stem + '_ranges.txt'
         self.Model = data_pack.get('model',None)
@@ -474,6 +479,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         if self.Y is None:
             raise ValueError("Need to specify valid data Y in Mountaineer.")
+
+        if self.plot_dir is not None:
+            Path(self.plot_dir).mkdir(parents=True,exist_ok=True)
         
         return
     ###########################################
@@ -1098,7 +1106,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
         for w in range(self.N_walker):
             col = next(cols)
             plt.plot(self.X[0],self.walkers[w].predict(self.X)[0],'-',color=col,lw=1)
-        plt.show()
+        if self.plot_dir is not None:
+            outfile = self.plot_dir + '/stats.png'
+            if self.verbose:
+                self.print_this('... saving stats to file: '+outfile,self.logfile)
+            plt.savefig(outfile,bbox_inches='tight')
+        else:
+            plt.show()
 
         cols = copy.deepcopy(self.cols)
         fig,ax1 = plt.subplots(figsize=(3,3))
@@ -1120,8 +1134,18 @@ class Mountaineer(Module,MLUtilities,Utilities):
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax2.legend(lines + lines2, labels + labels2, loc='upper right')
-        plt.show()
+        if self.plot_dir is not None:
+            outfile = self.plot_dir + '/losses.png'
+            if self.verbose:
+                self.print_this('... saving losses to file: '+outfile,self.logfile)
+            plt.savefig(outfile,bbox_inches='tight')
+        else:
+            plt.show()
 
+        if (self.plot_dir is not None):
+            outfile_stem = self.plot_dir + '/walker_visual_'
+            if self.verbose:
+                self.print_this('... saving walker visuals to files: '+outfile_stem+'p*p*.png',self.logfile)
         for pi in range(self.n_params-1):
             for pj in range(pi+1,self.n_params):
                 cols = copy.deepcopy(self.cols)
@@ -1138,7 +1162,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     col = next(cols)
                     plt.plot(walks[w][pi+1],walks[w][pj+1],ls='-',color=col,marker='o',markersize=3,lw=1)
                 plt.scatter(survey[pi],survey[pj],marker='*',s=1,c='gray')
-                plt.show()
+                if self.plot_dir is not None:
+                    outfile = outfile_stem + 'p{0:d}p{1:d}.png'.format(pi,pj)
+                    plt.savefig(outfile,bbox_inches='tight')
+                else:
+                    plt.show()
 
         return
     ###########################################
