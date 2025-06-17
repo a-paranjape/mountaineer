@@ -41,7 +41,7 @@ theory:
     - a2
     output_params: []
 likelihood:
-  likelihoods.Chi2Like:
+  mlstats.Chi2Like:
     X:
     - - -2.0
       - -1.793103448275862
@@ -1009,7 +1009,7 @@ likelihood:
     speed: -1
     stop_at_error: false
     version: null
-    python_path: ../code/likes/
+    python_path: /home/aseem/python_modules/MachineLearning/mlfundas/code/
     input_params: []
     output_params: []
 params:

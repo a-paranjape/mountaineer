@@ -16,8 +16,8 @@ likelihood:
 params:
   sig8:
     ref:
-      min: 0.7484833
-      max: 0.7684833
+      min: 0.792
+      max: 0.808
     prior:
       min: 0.7
       max: 0.9
@@ -25,8 +25,8 @@ params:
     latex: sig8
   Oc:
     ref:
-      min: 0.2703499
-      max: 0.2903499
+      min: 0.29700000000000004
+      max: 0.30300000000000005
     prior:
       min: 0.2
       max: 0.4
@@ -34,8 +34,8 @@ params:
     latex: Oc
   Ob:
     ref:
-      min: 0.03957193
-      max: 0.05957193
+      min: 0.04455
+      max: 0.04545
     prior:
       min: 0.04
       max: 0.05
@@ -43,8 +43,8 @@ params:
     latex: Ob
   h:
     ref:
-      min: 0.6165851
-      max: 0.6365851
+      min: 0.693
+      max: 0.707
     prior:
       min: 0.65
       max: 0.75
@@ -52,8 +52,8 @@ params:
     latex: h
   ns:
     ref:
-      min: 1.00454
-      max: 1.02454
+      min: 0.99
+      max: 1.01
     prior:
       min: 0.9
       max: 1.1
@@ -61,8 +61,8 @@ params:
     latex: ns
   w0:
     ref:
-      min: -1.134389
-      max: -1.114389
+      min: -1.01
+      max: -0.99
     prior:
       min: -1.25
       max: -0.75
