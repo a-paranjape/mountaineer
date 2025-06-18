@@ -42,7 +42,7 @@ theory:
     - lnsig21
     output_params: []
 likelihood:
-  likelihoods.Chi2Like:
+  mlstats.Chi2Like:
     X:
     - - -2.0
       - -1.793103448275862
@@ -1010,35 +1010,35 @@ likelihood:
     speed: -1
     stop_at_error: false
     version: null
-    python_path: ../code/likes/
+    python_path: /home/aseem/python_modules/MachineLearning/mlfundas/code/
     input_params: []
     output_params: []
 params:
   A1:
     ref:
-      min: -1.251
-      max: -1.249
+      min: -1.25099985
+      max: -1.2489998500000001
     prior:
-      min: -2.1133333333333333
-      max: -0.3866666666666667
+      min: -2.113333
+      max: -0.3866667
     proposal: 0.01
     latex: A_{1}
   mu1:
     ref:
-      min: -1.2624911666666665
-      max: -1.2604911666666667
+      min: -1.262491165
+      max: -1.2604911650000001
     prior:
       min: -2.509649
-      max: -0.01333333333333342
+      max: -0.01333333
     proposal: 0.01
     latex: \mu_{1}
   lnsig21:
     ref:
-      min: -0.9247379097200273
-      max: -0.9227379097200273
+      min: -0.9247379000000001
+      max: -0.9227379000000001
     prior:
       min: -2.540623
-      max: 0.6931471805599453
+      max: 0.6931472
     proposal: 0.01
     latex: \ln(\sigma^{2}_{1})
 sampler:
