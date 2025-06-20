@@ -136,40 +136,33 @@ class Walker(Module,MLUtilities,Utilities):
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
             X_train_shuff = self.X_train[:,ind_shuff].copy() 
-            Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using initial/previous params
             for b in range(mb_count):
+                Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using initial/previous params
                 loss_params['subset'] = self.ind_train[ind_shuff].copy()                
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
 
-                ################
-                # Ypred = self.model.forward(X_train_shuff) # update activations. MAIN ROLE is to set self.model.X = X_train_shuff, which is then used in self.model.backward
-                # self.N_evals_model += 1
-                ################
                 # re-use model evaluation from last self.save call
                 Ypred = Ypred_all[:,self.ind_train[ind_shuff]]
                 self.model.X = X_train_shuff
                 loss_params['slice_b'] = sl # setting this ensures loss calculated for mini-batch
-                self.loss = self.loss_module(params=loss_params)
-                batch_loss = self.loss.forward(Ypred) # calculate current batch loss, update self.loss
-                dLdm = self.loss.backward() # loss.backward returns d(loss)/d(model)
+                loss_inst = self.loss_module(params=loss_params)
+                batch_loss = loss_inst.forward(Ypred) # calculate current batch loss, update loss_inst
+                dLdm = loss_inst.backward() # loss.backward returns d(loss)/d(model)
+                loss_inst = None
 
                 self.model.backward(dLdm) # update gradients
                 self.N_evals_deriv += 1
                 self.model.sgd_step(t,lrate) # gradient descent update
-                Ypred_all = self.save(loss_params=loss_params) # will set keys to *full* data and save total loss using mini-batch updated params                
                 
             # validation check
             loss_params['subset'] = self.ind_val.copy()
             loss_params['slice_b'] = np.s_[:]
-            self.loss = self.loss_module(params=loss_params)
-            #######################
-            # Ypred_val = self.model.forward(self.X_val) # update activations. MAIN ROLE is to set self.model.X = self.X_val, which is then used in self.model.backward
-            # self.N_evals_model += 1
-            #######################
+            loss_inst = self.loss_module(params=loss_params)
             # re-use model evaluation from last self.save call
             Ypred_val = Ypred_all[:,self.ind_val] # Ypred_all exists for last mini-batch step
             self.model.X = self.X_val
-            self.val_loss[t] = self.loss.forward(Ypred_val) # calculate validation loss, update self.loss
+            self.val_loss[t] = loss_inst.forward(Ypred_val) # calculate validation loss, update loss_inst
+            loss_inst = None
             if t > check_after:
                 x = np.arange(t-check_after,t+1)
                 y = self.val_loss[x].copy()
@@ -183,8 +176,7 @@ class Walker(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
                 
-        Ypred_all = self.save(save_setup=True,loss_params=loss_params)
-        del Ypred_all
+        self.save(save_setup=True,loss_params=loss_params) 
         gc.collect()
         
         if self.verbose:
@@ -205,21 +197,22 @@ class Walker(Module,MLUtilities,Utilities):
     ###########################################
     def save(self,save_setup=False,loss_params={}):
         """ Save current total loss + params and (optionally) data_pack to file(s). """
-        lp = copy.deepcopy(loss_params)
-        lp['subset'] = np.s_[:]
-        lp['slice_b'] = np.s_[:]
-        self.loss = self.loss_module(params=lp)
-
-        Ypred = self.model.forward(self.X)
-        self.N_evals_model += 1
-        loss = self.loss.forward(Ypred)
-        
-        seq = [loss] + list(self.model.params.T[0])
-        self.write_to_file(self.out_file,seq)
-
         if save_setup:
             with open(self.file_stem + '.pkl', 'wb') as f:
                 pickle.dump(self.data_pack,f)
+            Ypred = None
+        # else:
+        lp = copy.deepcopy(loss_params)
+        lp['subset'] = np.s_[:]
+        lp['slice_b'] = np.s_[:]
+        loss_inst = self.loss_module(params=lp)
+
+        Ypred = self.model.forward(self.X)
+        self.N_evals_model += 1
+        loss = loss_inst.forward(Ypred)
+        seq = [loss] + list(self.model.params.T[0])
+        self.write_to_file(self.out_file,seq)
+        loss_inst = None
             
         return Ypred # can be re-used   
     ###########################################
@@ -533,7 +526,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.param_mins_old = copy.deepcopy(self.param_mins)
             
         model_survey = copy.deepcopy(self.model_inst) # AVOID COPYING IF POSSIBLE
-
         if self.verbose:
             self.print_this('Surveying using {0:d} locations {1:d} times...'.format(self.N_survey,self.n_iter_survey),self.logfile)
         pmaxs = np.zeros((self.n_iter_survey,self.n_params))
@@ -557,12 +549,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
             dtheta_loss_this = np.median(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
             dtheta_loss_this[dtheta_loss_this > 1e15] = 0.0
             self.Dtheta_loss += dtheta_loss_this
-            # if self.verbose:
-            #     self.print_this('... ... Dtheta_loss: ['+','.join(['{0:.3e}'.format(dtheta_loss_this[p]) for p in range(self.n_params)])+']',self.logfile)
 
         self.Dtheta_loss /= self.n_iter_survey
         if self.verbose:
-            self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',self.logfile)
+            self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',
+                            self.logfile)
             
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
@@ -573,11 +564,14 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.survey_params[i*self.N_survey:(i+1)*self.N_survey,:] = sparam[i]
             self.survey_loss[i*self.N_survey:(i+1)*self.N_survey] = sloss[i]
 
+        del sparam,sloss
+        gc.collect()
+        
         self.survey_params,idx = np.unique(self.survey_params,axis=0,return_index=True)
         self.survey_loss = self.survey_loss[idx]
         if self.survey_loss.size != self.N_survey_tot:
             if self.verbose:
-                self.print_this('... eliminated {0:d} repeated param vectors'.format(self.N_survey_tot-self.survey_loss.size),self.logfile)                
+                self.print_this('... eliminated {0:d} repeated param vectors'.format(self.N_survey_tot-self.survey_loss.size),self.logfile)      
         self.N_survey_tot = self.survey_loss.size
         
         if self.verbose:
@@ -608,7 +602,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('... ... evaluating loss values and gradients',self.logfile)
         lp = copy.deepcopy(self.loss_params)
         lp['Y_full'] = self.Y.copy() # since Walker is not invoked
-        loss = self.loss_module(params=lp)
+        loss_inst = self.loss_module(params=lp)
         survey_loss = np.zeros(self.N_survey)
         survey_dLdtheta = np.zeros((self.N_survey,self.n_params))
         for s in range(self.N_survey):
@@ -616,8 +610,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # calculate total loss at survey parameters
             Ypred = model_survey.forward(self.X)
             self.N_evals_model += 1
-            survey_loss[s] = loss.forward(Ypred)
-            dLdm = loss.backward()
+            survey_loss[s] = loss_inst.forward(Ypred)
+            dLdm = loss_inst.backward()
             model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
             self.N_evals_deriv += 1
             survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
@@ -791,7 +785,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         pins = pins[keep_this]
         pins_like = pins_like[keep_this]
         walker_layers = walker_layers[keep_this] # loss values
-        print('... ... ... selected {0:d} walkers'.format(self.N_walker))
+        # print('... ... ... selected {0:d} walkers'.format(self.N_walker))
         # for w in range(pins.shape[0]):
         #     print(w+1,walker_layers[w],pins_like[w],pins[w])
             
@@ -875,8 +869,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
                                                                param_mins=self.param_mins,param_maxs=self.param_maxs)
         else:
             pins,self.walker_layers = self.initialize_walkers()
-            # pins,self.walker_layers = self.gen_latin_hypercube(Nsamp=self.N_walker,dim=self.n_params,return_layers=True,
-            #                                                    param_mins=self.param_mins,param_maxs=self.param_maxs)
+            
         self.set_adams() # will set self.B1_adams,self.B2_adams
         
         for w in range(self.N_walker):
@@ -905,9 +898,12 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 self.print_this('... ... check_after = {0:d}'.format(self.check_after),self.logfile)
                 self.print_this('... ...      lrates (outside inwards)',self.logfile)
                 for p in range(self.n_params):
-                    self.print_this('... ... ...    p{0:d} : {1:.4f} to {2:.4f}'.format(p,self.lrates[:,p].max(),self.lrates[:,p].min()),self.logfile)                
-                self.print_this('... ...    B1_adams = {0:.3f} to {1:.3f} (outside inwards)'.format(self.B1_adams.max(),self.B1_adams.min()),self.logfile)
-                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.min(),1-self.B2_adams.max()),self.logfile)
+                    self.print_this('... ... ...    p{0:d} : {1:.4f} to {2:.4f}'.format(p,self.lrates[:,p].max(),
+                                                                                        self.lrates[:,p].min()),self.logfile)                
+                self.print_this('... ...    B1_adams = {0:.3f} to {1:.3f} (outside inwards)'.format(self.B1_adams.max(),
+                                                                                                    self.B1_adams.min()),self.logfile)
+                self.print_this('... ...  1-B2_adams = {0:.2e} to {1:.2e} (outside inwards)'.format(1-self.B2_adams.min(),
+                                                                                                    1-self.B2_adams.max()),self.logfile)
 
             self.params_train = []
             for w in range(self.N_walker):
@@ -968,7 +964,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.lrates = np.zeros((self.N_walker,self.n_params))
         for w in range(self.N_walker):
             # set lrate with additional factor to account for adam parameter variations
-            self.lrates[w] = lrate_vals[self.walker_layers[w]]#*np.sqrt(1-self.B2_adams[w])/(1-self.B1_adams[w]) # including B-dep facs makes lrates smaller
+            self.lrates[w] = lrate_vals[self.walker_layers[w]]#*np.sqrt(1-self.B2_adams[w])/(1-self.B1_adams[w])
+            # including B-dep facs makes lrates smaller
         return
     ###########################################    
 
@@ -1065,8 +1062,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         if self.verbose:
             self.print_this('... total steps taken = {0:d} (of which {1:d} were survey)'.format(steps,self.N_survey_tot),self.logfile)
-            self.print_this('... done',self.logfile)            
-
+            self.print_this('... done',self.logfile)
+            
         return walks
     ###########################################
 
