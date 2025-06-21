@@ -1059,6 +1059,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
                 if not self.walks_exist:
                     for s in range(steps_this):
                         self.write_to_file(self.walks_file,list(walks[w][:,s]))
+
+        if self.walks_exist:
+            self.N_evals_model = steps
+            self.N_evals_deriv = steps - self.N_walker
             
         if self.verbose:
             self.print_this('... total steps taken = {0:d} (of which {1:d} were survey)'.format(steps,self.N_survey_tot),self.logfile)
