@@ -270,7 +270,7 @@ class Model(Module,MLUtilities):
     ###########################################
     def calc_model(self,X):
         prnt_strng = "User must specify calc_model method of Model instance."
-        prnt_strng += " Output must be model prediction of shape X.shape = (1,n_samp)."
+        prnt_strng += " Output must be model prediction of shape X.shape = (1,n_samp) where X is preferably an indexing integer array."
         raise NotImplementedError(prnt_strng)
     ###########################################
 
