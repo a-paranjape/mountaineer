@@ -276,9 +276,8 @@ class Model(Module,MLUtilities):
 
     ###########################################
     def calc_dmdtheta(self):
-        # expect dLdm.shape = (1,n_samp)
         prnt_strng = "User must specify calc_dmdtheta method of Model instance." 
-        prnt_strng += " Method must return dmdtheta (n_params,n_samp) using input dLdm (1,n_samp)."
+        prnt_strng += " Method must return dmdtheta (n_params,n_samp) where self.X has shape (1,n_samp)."
         raise NotImplementedError(prnt_strng)
     ###########################################
     
