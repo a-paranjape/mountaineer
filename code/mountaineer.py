@@ -876,7 +876,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             dp_walk['params_init'] = pins[w:w+1,:].T # values irrelevant if walks exist, but structure needed
             dp_walk['model'].B1_adam = self.B1_adams[w]
             dp_walk['model'].B2_adam = self.B2_adams[w]
-            self.walkers.append(Walker(data_pack=dp_walk))
+            self.walkers.append(Walker(data_pack=copy.deepcopy(dp_walk)))
 
         if not self.walks_exist:
             if self.verbose:
