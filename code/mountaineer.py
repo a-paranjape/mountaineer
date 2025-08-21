@@ -74,7 +74,7 @@ class Walker(Module,MLUtilities,Utilities):
         self.out_file = self.file_stem + '_loss_params.txt'
         if not self.walks_exist:
             with open(self.out_file,'w') as f:
-                f.write('# loss | a0 ... a{0:d}\n'.format(self.model.n_params))
+                f.write('# loss | a0 ... a{0:d}\n'.format(self.model.n_params-1))
         
         self.n_samp = self.X.shape[1]
         if self.walks_exist:
@@ -367,8 +367,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # give these to user-control if needed
         # no. of surveys to average over when updating param ranges
         self.n_iter_survey = 5
-        # number of times (p_min,p_max) can be traversed in given steps. used in set_lrates
-        self.N_traverse = 10.0 # 7.0 
+        # number of elements with which posterior width in each direction is resolved, per step. used in set_lrates
+        self.N_resolve = 1.5 # 3.0 # older was 10.0 
 
         # these will be updated while training
         self.N_evals_model = 0
@@ -431,7 +431,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # used in self.adjust_survey for shuffling param directions and in self.initialize_walkers to downsample walker locations
         
         if self.verbose:
-            self.print_this('Mountaineer to explore loss land-scape!',self.logfile)
+            self.print_this('Mountaineer to explore loss landscape!',self.logfile)
             
         self.loss_params = copy.deepcopy(data_pack.get('loss_params',{}))        
         self.distributed = 0 # will be set to 1 upon successful call to self.distribute().
@@ -544,12 +544,12 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # reset ranges for next iteration
             self.param_maxs = copy.deepcopy(self.param_maxs_old)
             self.param_mins = copy.deepcopy(self.param_mins_old)
-            # accumulate typical loss variation scale along each parameter direction
-            dtheta_loss_this = np.median(np.fabs(self.survey_loss)/np.fabs(self.survey_dLdtheta.T + 1e-15),axis=1)
-            dtheta_loss_this[dtheta_loss_this > 1e15] = 0.0
-            self.Dtheta_loss += dtheta_loss_this
+            # accumulate typical loss dispersion along each parameter direction
+            dtheta_loss_this = self.calc_dtheta_loss(self.survey_loss,self.survey_dLdtheta,self.param_maxs-self.param_mins)
+            self.Dtheta_loss += dtheta_loss_this**2
 
         self.Dtheta_loss /= self.n_iter_survey
+        self.Dtheta_loss = np.sqrt(self.Dtheta_loss)
         if self.verbose:
             self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',
                             self.logfile)
@@ -617,7 +617,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
                 self.status_bar(s,self.N_survey)
-                
+        
         # NaN is my enemy
         if self.verbose:
             self.print_this('... ... excluding NaNs',self.logfile)
@@ -813,18 +813,24 @@ class Mountaineer(Module,MLUtilities,Utilities):
         """ Calculate number of walkers needed based on statistical volume enclosed by loss function. """
         #####################
         # adjusted by trial and error
-        N_walker_factor = 100.0 # 45.0
+        N_walker_factor = 3.0 # 5.0
         #####################
 
-        likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
-        Vgeom = 1.0
-        for p in range(self.n_params):
-            Vgeom *= (self.param_maxs_old[p] - self.param_mins_old[p])
+        # likelihood = np.exp(-0.5*(self.survey_loss - self.survey_loss.min()))
+        # Vgeom = 1.0
+        # for p in range(self.n_params):
+        #     Vgeom *= (self.param_maxs_old[p] - self.param_mins_old[p])
             
-        Vstat = Vgeom*likelihood.mean()
+        # Vstat = Vgeom*likelihood.mean()
+
+        Dp = self.param_maxs - self.param_mins
+        Vstat = np.prod(Dp)/np.prod(self.Dtheta_loss)
+        
         N_walker = N_walker_factor*Vstat**(1/self.n_params)
         
-        return int(np.rint(N_walker))
+        N_walker = np.max([self.n_params,int(np.rint(N_walker))])
+        
+        return N_walker
     ###########################################
 
     
@@ -942,9 +948,11 @@ class Mountaineer(Module,MLUtilities,Utilities):
             raise Exception('set_lrates() can only be called within or after distribute() in Mountaineer.')
         
         # min,max values of lrate
-        # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
-        # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
-        lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
+        # set typical lrate vector demanding Dtheta_loss (typical width) be resolved with ~N_resolve resolution elements per step
+        lrate_typical = self.Dtheta_loss/self.N_resolve
+        # # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
+        # # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
+        # lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
         self.lrate_min = lrate_typical # 1e-2 # 0.15
         self.lrate_max = lrate_typical # 1e-2 # 0.15 # will be changed below
         self.lrate_largest_max = self.lrate_max_fac*lrate_typical # 1e-2 # 0.25
@@ -967,6 +975,63 @@ class Mountaineer(Module,MLUtilities,Utilities):
             # including B-dep facs makes lrates smaller
         return
     ###########################################    
+
+    ############################################################
+    def calc_dtheta_loss(self,loss,dLdtheta,Dparam,rtol=1e-2,n_iter=50):
+        """ Convenience function to calculate anisotropic dispersions (generalisations of picasa/code/asa_utilities.ASAUtilities.asa_calc_sig).
+             Input:
+               -- loss,dLdtheta: arrays containing chain of loss (N,) and loss gradient (N,n_param), assumed sampled uniformly.
+               -- Dparam: array (n_param,) of uniform sampling widths in each direction
+               -- rtol: float, relative tolerance for declaring convergence
+               -- n_iter: int, maximum number of iterations. Set to 1 for single, unscaled result.
+             Returns:
+               -- sig_theta: array (n_param,) containing parameter dispersions
+        """
+        if loss.shape[0] != dLdtheta.shape[0]:
+            raise Exception('Mismatched input shapes of loss and dLdtheta in Mountaineer.calc_dtheta_loss')
+        n_param = dLdtheta.shape[1]
+        if len(Dparam) != n_param:
+            raise Exception('Mismatched input shapes of Dparam and dLdtheta in Mountaineer.calc_dtheta_loss')
+
+        sig_theta = np.zeros(n_param,dtype=float)
+
+        max_signif_prev = 1.0
+        for i in range(n_iter):
+            scale = max_signif_prev
+            prob = np.exp(-0.5*loss/scale)
+            prob[np.isnan(prob)] = 1e-15
+            prob[prob < 1e-15] = 1e-15
+            p_sum = np.sum(prob)
+            Fisher = np.zeros((n_param,n_param),dtype=float)
+            for pa in range(n_param):
+                for pb in range(pa,n_param):
+                    f = 0.25*np.sum(prob*dLdtheta[:,pa]*dLdtheta[:,pb])/p_sum
+                    Fisher[pa,pb] = f
+                    Fisher[pb,pa] = f
+            sig_diag = 2*np.sqrt(scale*p_sum/(np.sum(prob*dLdtheta.T**2,axis=1)+1e-15)) # more stable than using sqrt(diagonal(Cov))
+            max_signif_approx = np.max(Dparam/(2*sig_diag))
+            if np.fabs(max_signif_approx/max_signif_prev-1) < rtol:
+                break
+            max_signif_prev = 1.0*max_signif_approx
+
+        U,s,Vh = linalg.svd(Fisher) # expect s non-negative
+        s[s < 1e-15] = 1e-15
+        Cov = scale*np.dot(Vh.T,np.dot(np.diag(1.0/s),U.T))        
+        # Cov = scale*linalg.inv(Fisher)
+        Cov_diag = np.diagonal(Cov)
+        if np.any(Cov_diag < 0.0):
+            # stopgap for pathological cases
+            sig_theta = np.median(np.fabs(loss)/np.fabs(dLdtheta.T + 1e-15),axis=1)
+        else:
+            sig_theta = np.sqrt(np.diagonal(Cov))
+        sig_theta = np.minimum(sig_theta,Dparam/np.sqrt(12)) # set likelihood width equal to prior width for unconstrained directions
+
+        # older, biased version
+        # sig_theta = np.median(np.fabs(loss)/np.fabs(dLdtheta.T + 1e-15),axis=1)
+        # sig_theta[sig_theta > 1e15] = 0.0
+        
+        return sig_theta
+    ############################################################
 
     ###########################################
     def climb(self):
@@ -1075,6 +1140,25 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('Reading from file: '+self.walks_file,self.logfile)
         data = np.loadtxt(self.walks_file).T # (n_params+1,n_steps_allwalks)
+        if self.verbose:
+            self.print_this('... excluding NaNs',self.logfile)
+        cond_nan = np.isnan(data[0])
+        data = data[:,~cond_nan]
+        if np.any(cond_nan):
+            if self.verbose:
+                self.print_this('... found {0:d} NaNs in {1:d} entries'.format(np.where(cond_nan)[0].size,cond_nan.size),self.logfile)
+                self.print_this('... writing back cleaned data',self.logfile)
+            with open(self.walks_file,'w') as f:
+                f.write('# loss | a0 ... a{0:d}\n'.format(self.n_params-1))
+            for s in range(data.shape[1]):
+                self.write_to_file(self.walks_file,data[:,s])
+        else:
+            if self.verbose:
+                self.print_this('... no NaNs found',self.logfile)
+        del cond_nan
+        gc.collect()
+        if self.verbose:
+            self.print_this('... done loading',self.logfile)
 
         return data
     ###########################################
