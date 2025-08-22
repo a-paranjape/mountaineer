@@ -1016,29 +1016,29 @@ likelihood:
 params:
   A1:
     ref:
-      min: -1.25099985
-      max: -1.2489998500000001
+      min: -1.251
+      max: -1.249
     prior:
-      min: -2.113333
-      max: -0.3866667
+      min: -2.58
+      max: 0.07999999999999996
     proposal: 0.01
     latex: A_{1}
   mu1:
     ref:
-      min: -1.262491165
-      max: -1.2604911650000001
+      min: -1.001
+      max: -0.999
     prior:
-      min: -2.509649
-      max: -0.01333333
+      min: -2.52
+      max: 0.52
     proposal: 0.01
     latex: \mu_{1}
   lnsig21:
     ref:
-      min: -0.9247379000000001
-      max: -0.9227379000000001
+      min: -1.0132427499999999
+      max: -1.01124275
     prior:
-      min: -2.540623
-      max: 0.6931472
+      min: -2.569535
+      max: 0.5450495
     proposal: 0.01
     latex: \ln(\sigma^{2}_{1})
 sampler:
