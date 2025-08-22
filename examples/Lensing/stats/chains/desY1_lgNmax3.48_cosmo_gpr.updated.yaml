@@ -33,20 +33,20 @@ likelihood:
 params:
   sig8:
     ref:
-      min: 0.792
-      max: 0.808
+      min: 0.7906799999999999
+      max: 0.8066533333333333
     prior:
-      min: 0.7
-      max: 0.9
+      min: 0.6
+      max: 0.9973333333333333
     proposal: 0.005
     latex: sig8
   Oc:
     ref:
-      min: 0.29700000000000004
-      max: 0.30300000000000005
+      min: 0.297
+      max: 0.303
     prior:
-      min: 0.2
-      max: 0.4
+      min: 0.152
+      max: 0.448
     proposal: 0.005
     latex: Oc
   Ob:
@@ -69,20 +69,20 @@ params:
     latex: h
   ns:
     ref:
-      min: 0.99
-      max: 1.01
+      min: 0.9906599999999999
+      max: 1.0106733333333333
     prior:
-      min: 0.9
+      min: 0.9013333333333333
       max: 1.1
     proposal: 0.005
     latex: ns
   w0:
     ref:
-      min: -1.01
-      max: -0.99
+      min: -1.0116833333333335
+      max: -0.99165
     prior:
       min: -1.25
-      max: -0.75
+      max: -0.7533333333333333
     proposal: 0.005
     latex: w0
 sampler:
