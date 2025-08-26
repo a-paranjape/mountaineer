@@ -1185,11 +1185,21 @@ class Mountaineer(Module,MLUtilities,Utilities):
         errors = np.sqrt(np.diag(self.loss_params['cov_mat']))
         imin = self.Y[0].argmin()
         imax = self.Y[0].argmax()
-        plt.ylim(self.Y[0][imin]-1.5*errors[imin],self.Y[0][imax]+1.5*errors[imax])
+        Y_min = self.Y[0][imin]-1.5*errors[imin]
+        Y_max = self.Y[0][imax]+1.5*errors[imax]
+        cond_dynrange = (np.median(self.Y[0]) < Y_min + 0.1*(Y_max-Y_min))
+        cond_dynrange = cond_dynrange | (np.median(self.Y[0]) > Y_max - 0.1*(Y_max-Y_min))
+        if cond_dynrange:
+            if Y_min > 0.0:
+                plt.yscale('log')
+            else:
+                plt.yscale('symlog')
+        plt.ylim(Y_min,Y_max)
         plt.errorbar(self.X[0],self.Y[0],yerr=errors,ls='none',c='k',capsize=5,marker='o',markersize=1,lw=0.5)
         for w in range(self.N_walker):
             col = next(cols)
             plt.plot(self.X[0],self.walkers[w].predict(self.X)[0],'-',color=col,lw=1)
+        plt.minorticks_on()
         if self.plot_dir is not None:
             outfile = self.plot_dir + '/stats.png'
             if self.verbose:
@@ -1197,6 +1207,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             plt.savefig(outfile,bbox_inches='tight')
         else:
             plt.show()
+        plt.close()
 
         cols = copy.deepcopy(self.cols)
         fig,ax1 = plt.subplots(figsize=(3,3))
@@ -1218,6 +1229,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax2.legend(lines + lines2, labels + labels2, loc='upper right')
+        plt.minorticks_on()
         if self.plot_dir is not None:
             outfile = self.plot_dir + '/losses.png'
             if self.verbose:
@@ -1225,6 +1237,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             plt.savefig(outfile,bbox_inches='tight')
         else:
             plt.show()
+        plt.close()
 
         if (self.plot_dir is not None):
             outfile_stem = self.plot_dir + '/walker_visual_'
@@ -1246,11 +1259,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     col = next(cols)
                     plt.plot(walks[w][pi+1],walks[w][pj+1],ls='-',color=col,marker='o',markersize=3,lw=1)
                 plt.scatter(survey[pi],survey[pj],marker='*',s=1,c='gray')
+                plt.minorticks_on()
                 if self.plot_dir is not None:
                     outfile = outfile_stem + 'p{0:d}p{1:d}.png'.format(pi,pj)
                     plt.savefig(outfile,bbox_inches='tight')
                 else:
                     plt.show()
+                plt.close()
 
         return
     ###########################################
