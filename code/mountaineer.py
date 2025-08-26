@@ -1207,7 +1207,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             plt.savefig(outfile,bbox_inches='tight')
         else:
             plt.show()
-        plt.close()
 
         cols = copy.deepcopy(self.cols)
         fig,ax1 = plt.subplots(figsize=(3,3))
@@ -1237,7 +1236,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             plt.savefig(outfile,bbox_inches='tight')
         else:
             plt.show()
-        plt.close()
 
         if (self.plot_dir is not None):
             outfile_stem = self.plot_dir + '/walker_visual_'
@@ -1265,7 +1263,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
                     plt.savefig(outfile,bbox_inches='tight')
                 else:
                     plt.show()
-                plt.close()
 
         return
     ###########################################
