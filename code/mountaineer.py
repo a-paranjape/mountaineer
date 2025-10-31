@@ -210,6 +210,13 @@ class Walker(Module,MLUtilities,Utilities):
         Ypred = self.model.forward(self.X)
         self.N_evals_model += 1
         loss = loss_inst.forward(Ypred)
+        
+        #######################
+        # modified Oct 28, 2025
+        prior_diff = (self.model.params - self.model.prior_mean)*np.sqrt(self.model.prior_invsig2)
+        loss += np.sum(prior_diff**2)
+        #######################
+        
         seq = [loss] + list(self.model.params.T[0])
         self.write_to_file(self.out_file,seq)
         loss_inst = None
@@ -231,7 +238,8 @@ class Walker(Module,MLUtilities,Utilities):
 ###############################################
 class Model(Module,MLUtilities):
     ###########################################
-    def __init__(self,n_params=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
+    def __init__(self,n_params=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8,
+                 prior_invsig2=0.0,prior_mean=0.0):
         self.n_params = n_params
         if self.n_params is None:
             raise ValueError('n_params must be integer in Model().')
@@ -247,6 +255,12 @@ class Model(Module,MLUtilities):
         if self.adam:
             self.M = np.zeros_like(self.params)
             self.V = np.zeros_like(self.params)
+            
+        #######################
+        # modified Oct 28, 2025
+        self.prior_invsig2 = prior_invsig2
+        self.prior_mean = prior_mean
+        #######################
     ###########################################
     
     ###########################################
@@ -289,7 +303,15 @@ class Model(Module,MLUtilities):
             dtheta = self.M/corr_B1/(np.sqrt(self.V/corr_B2) + self.eps_adam)
         else:
             dtheta = self.dLdtheta
-        self.params = self.params - lrate*dtheta
+
+        #######################
+        # modified Oct 28, 2025
+        self.params = self.params.T # temporarily convert from (nparam,1) to (1,nparam)
+        self.params *= (1 - lrate*self.prior_invsig2) # eqn 7.5 of DeepLearning book
+        self.params -= lrate*(dtheta.T - self.prior_invsig2*self.prior_mean) # note dtheta.T to maintain (1,nparam)
+        self.params = self.params.T # back to (nparam,1)
+        #######################            
+        # self.params = self.params - lrate*dtheta
         
         return 
     ###########################################
