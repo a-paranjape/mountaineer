@@ -632,6 +632,13 @@ class Mountaineer(Module,MLUtilities,Utilities):
             Ypred = model_survey.forward(self.X)
             self.N_evals_model += 1
             survey_loss[s] = loss_inst.forward(Ypred)
+        
+            #######################
+            # modified Oct 31, 2025
+            prior_diff = (model_survey.params - model_survey.prior_mean)*np.sqrt(model_survey.prior_invsig2)
+            survey_loss[s] += np.sum(prior_diff**2)
+            #######################
+        
             dLdm = loss_inst.backward()
             model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
             self.N_evals_deriv += 1
