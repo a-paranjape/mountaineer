@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.linalg as linalg
 import scipy.spatial as spatial
+import scipy.optimize as optimize
 import sys,os
 
 from paths import ML_Path
@@ -1296,6 +1297,174 @@ class Mountaineer(Module,MLUtilities,Utilities):
         return
     ###########################################
 
+
+################################################################
+class Fit_Utilities(MLUtilities,Utilities):
+    ############################################################
+    # Quadratic form fitting routines
+    # -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
+    ############################################################
+    def __init__(self,n_params=0,verbose=True,logfile=None):
+        Utilities.__init__(self)
+        self.n_params = n_params # int
+        self.Ns_min = (self.n_params+1)*(self.n_params+2) // 2
+        self.verbose = verbose
+        self.logfile = logfile
+        
+    ############################################################
+    def get_bestfit(self,chi2,param_vals,Ns=None,tree=None):
+        """ Wrapper to extract quadratic estimator for best-fit, covariance and minimum loss. 
+             chi2: loss values (N,) 
+             param_vals: parameter vectors (N,n_params)
+             Ns: None or int: number of samples to use (default None, then calculated internally)
+             tree: None or instance of scipy.spatial.cKDTree using param_vals (useful for iterative calls).
+                                       
+             Returns: covariance (D,D), params_best (D,), chi2_min (scalar),eigvals (D,),rotate(D,D)
+             Rotation convention is such that y = (rotate.T) . param_vals will give vector in eigenspace. 
+        """
+        if len(param_vals.shape) != 2:
+            raise Exception("Expecting param_vals of shape (N,{0:d}) in get_bestfit()".format(self.n_params))
+        if len(chi2.shape) != 1:
+            raise Exception("Expecting chi2 of shape (N,) in get_bestfit()")
+        if chi2.size != param_vals.shape[0]:
+            raise Exception("chi2 and param_vals incompatible in get_bestfit()")
+        if param_vals.shape[1] != self.n_params:
+            raise Exception("Expecting param_vals of shape (N,{0:d}) in get_bestfit(), detected (N,{1:d})".format(self.n_params,param_vals.shape[1]))
+        
+        if Ns is not None:
+            Ns_use = Ns
+        else:
+            # Ns_use = np.max([int(0.02*chi2.size),10*self.Ns_min])
+            # Ns_use = np.min([chi2.size,Ns_use])
+            Ns_use = 2*self.Ns_min
+
+        if chi2.size <= Ns_use:
+            raise ValueError('Too few sampling points. Use higher Nsamp or append chain with a few more iterations.')
+        
+        imin = chi2.argmin()
+        tree = tree if tree is not None else spatial.cKDTree(param_vals)
+        dist_nn,ind_nn = tree.query(param_vals[imin],k=Ns_use) 
+        # Ns_use nearest neighbours of evaluated minimum
+
+        Qparams,flag_ok_qfit = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn])
+        if flag_ok_qfit:
+            Q0,Q1,Q2 = self.unwrap_Qs(Qparams,self.n_params)
+            ##########################
+            # core steps
+            covariance = linalg.inv(Q2)
+            params_best = -0.5*np.dot(covariance,Q1)
+            chi2_min = Q0 + 0.5*np.dot(Q1,params_best)
+            eigvals,rotate = linalg.eigh(covariance,check_finite=False)
+            print(eigvals,len(ind_nn))
+            ##########################
+        else:
+            self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
+            eigvals = -1.0*np.ones(self.n_params)
+            covariance,params_best,chi2_min,rotate = 0,0,0,0
+
+        if np.any(eigvals < 0.0): 
+            if Ns_use >= 0.5*chi2.size:
+                self.print_this('! Warning !',self.logfile)
+                self.print_this('... positive definite quadratic form not obtained with as much as 50% of sample',self.logfile)
+                self.print_this('... use higher Nsamp or append chain with a few more iterations',self.logfile)
+                self.print_this('... returning inf eigen-values',self.logfile)
+                self.print_this('! Warning !',self.logfile)
+                eigvals[:] = np.inf
+            else:
+                covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(2*Ns_use),tree=tree)
+
+        # if lambda,R = eigh(C), then C = R Lambda R^T where Lambda is diagonal with lamda on the diagonal.
+        # so y = R^T param_vals will give a correctly rotated parameter vector
+        # such that the norm relative to C or C^-1 is preserved.
+        # (note C^-1 = (R^T)^-1 Lambda^-1 R^-1 = R Lambda^-1 R^T).
+        # E.g.: Q = p^T C^-1 p = p^T R Lambda^-1 R^T p = y^T Lambda^-1 y.
+        return covariance,params_best,chi2_min,eigvals,rotate
+    ############################################################
+
+    ############################################################
+    def quad_form(self,Qparams,x):
+        """ Quadratic form for D-dimensional data vector x.
+            Expect x.shape = (N,D)
+            Qparams: ((D+1)(D+2)/2,), to be unwrapped into
+            Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
+            Returns: x^T Q2 x + x^T Q1 + Q0 (shape (N,))
+        """
+        if len(x.shape) != 2:
+            raise TypeError("Incompatible shape for x in quad_form(). Need (N,D), detected (" 
+                            + ','.join(['%d' % (i,) for i in x.shape]) +').')
+        D = x.shape[1]
+        Q0,Q1,Q2 = self.unwrap_Qs(Qparams,D)
+        return np.sum(np.dot(x,Q2)*x,axis=1) + np.dot(x,Q1) + Q0
+    ############################################################
+
+    ############################################################
+    def quad_residuals(self,Qparams,x,y):
+        """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
+        return y - self.quad_form(Qparams,x)
+    ############################################################
+
+
+    ############################################################
+    def quad_error(self,Qparams,x,y):
+        """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
+        return np.sum((y - self.quad_form(Qparams,x))**2)
+    ############################################################
+    
+    ############################################################
+    def unwrap_Qs(self,Qparams,D):
+        """ Convenience function to extract Q0,Q1,Q2 for use in quad_form(). """
+        if Qparams.size != int((D+1)*(D+2)/2):
+            raise TypeError("Incompatible shape for Qparams in unwrap_Qs(). Need ((D+1)(D+2)/2,), detected (" 
+                            + ','.join(['%d' % (i,) for i in Qparams.shape]) +').')
+        Q0 = Qparams[0]
+        count = D+1
+        Q1 = Qparams[1:count]
+        if D > 1:
+            Q2 = np.zeros((D,D),dtype=float)
+            for di in range(D):
+                for dj in range(di,D):
+                    Q2[di,dj] = Qparams[count]
+                    count += 1
+            for di in range(1,D):
+                for dj in range(di):
+                    Q2[di,dj] = Q2[dj,di]
+        else:
+            Q2 = np.array([[Qparams[-1]]])
+
+        return Q0,Q1,Q2
+    ############################################################
+
+    ############################################################
+    def fit_quad_form(self,y,x):
+        """ Fit quadratic form y = f(x) = x^T Q2 x + x^T Q1 + Q0 given N samples of y and x.
+            Expect y and x to have shape (N,) and (N,D).
+            Returns: 
+            -- Qparams ((D+1)(D+2)/2,) that can be unwrapped into Q0 (scalar), Q1 (D,), Q2 (D,D).
+            -- flag_ok_qfit: boolean flag to indicate if fit succeeded.
+        """
+        flag_ok_qfit = True
+
+        if len(x.shape) != 2:
+            raise TypeError("Incompatible shape for x in fit_quad_form(). Need (N,D), detected (" 
+                            + ','.join(['%d' % (i,) for i in x.shape]) +').')
+        D = x.shape[1]
+        if y.size != x.shape[0]:
+            raise TypeError("Incompatible shape for y in fit_quad_form(). Need ({0:d},), detected (".format(x.shape[0]) 
+                            + ','.join(['%d' % (i,) for i in y.shape]) +').')
+        Qparams_0 = np.ones(int((D+1)*(D+2)/2),dtype=float)
+        try:
+            # opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
+            opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
+            output = opt_res.x
+        except ValueError as exc:
+            self.print_this(exc.args,self.logfile)
+            output = 0.0*Qparams_0
+            flag_ok_qfit = False
+
+        return output,flag_ok_qfit
+    ############################################################
+    ############################################################
+    
     
     # ###########################################
     # def adjust_survey_old(self,sp,ls):
