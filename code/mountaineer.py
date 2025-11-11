@@ -1355,7 +1355,6 @@ class Fit_Utilities(MLUtilities,Utilities):
             params_best = -0.5*np.dot(covariance,Q1)
             chi2_min = Q0 + 0.5*np.dot(Q1,params_best)
             eigvals,rotate = linalg.eigh(covariance,check_finite=False)
-            print(eigvals,len(ind_nn))
             ##########################
         else:
             self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
@@ -1453,8 +1452,9 @@ class Fit_Utilities(MLUtilities,Utilities):
                             + ','.join(['%d' % (i,) for i in y.shape]) +').')
         Qparams_0 = np.ones(int((D+1)*(D+2)/2),dtype=float)
         try:
-            # opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
-            opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
+            # REPLACE THIS WITH A MOUNTAINEER INSTANCE!
+            opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
+            # opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
             output = opt_res.x
         except ValueError as exc:
             self.print_this(exc.args,self.logfile)
