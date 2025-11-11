@@ -13,6 +13,8 @@ from mlstats import Chi2
 import copy,pickle
 from pathlib import Path
 
+import subprocess
+
 import matplotlib.pyplot as plt
 import gc
 
@@ -22,7 +24,7 @@ class Walker(Module,MLUtilities,Utilities):
     def __init__(self,data_pack={}):
         """ Class to implement gradient descent for single walker.
             data_pack should be dictionary with a subset of following keys:
-            -- 'X': array of X [control variable] (1,n_samp)
+            -- 'X': array of X [control variable, preferably integer indexing array] (1,n_samp)
             -- 'Y': array of Y [target] (1,n_samp)
             -- 'val_frac': float between 0..1, fraction of data to use for validation in Walker.train()
             -- 'model': Instance of Model containing forward (prediction),
@@ -1298,27 +1300,135 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ###########################################
 
 
+
+################################################################
+class QuadraticForm(Model):
+    ############################################################
+    def __init__(self,n_params=None,Xq=None):
+        """ Routines to evaluate quadratic form for D-dimensional data vector Xq and compare to values Yq.
+            -- Xq: array of shape (N,D)
+            Quadratic form parameters organised as 
+            Qparams: ((D+1)(D+2)/2,), to be unwrapped into
+            Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
+            so as to evaluate
+            Xq^T Q2 Xq + Xq^T Q1 + Q0 (shape (N,))
+        """
+        if Xq is None:
+            raise Exception("Xq must be array in QuadraticForm().")
+        if len(Xq.shape) != 2:
+            raise Exception("Expecting Xq.shape = (N,D) in QuadraticForm().")
+
+        self.Xq = Xq
+        self.D = self.Xq.shape[1]
+        Model.__init__(self,n_params=((self.D+1)*(self.D+2))//2)
+
+        self.gradient_Q = self.calc_gradient() # indep of quad params, so calculate only once
+
+    ############################################################
+
+    ############################################################
+    def calc_gradient(self):
+        """ Calculate gradient of quadratic form w.r.t. parameter Qparams. 
+            Returns array of shape (self.n_params,self.Xq.shape[0])
+            Order: Qparams = [Q0,Q1[0],..,Q1[D-1],Q2[0,0],..,Q2[0,D-1],Q2[1,1],..,Q2[1,D-1],..,Q2[D-1,D-1]]
+                           = [ 0,    1,..,      D,    D+1,..,       2D,   2D+1,..,     3D-1,..,(D+1)(D+2)/2-1]
+            Function: Q0 + Xq_i Q1_i + Xq_i Q2_ij Xq_j
+        """
+        gQ = np.zeros((self.n_params,self.Xq.shape[0]))
+        gQ[0,:] = 1.0
+        count = self.D+1
+        gQ[1:count,:] = self.Xq.T
+        if self.D > 1:
+            for di in range(self.D):
+                for dj in range(di,self.D):
+                    gQ[count,:] = self.Xq[:,di]*self.Xq[:,dj]
+                    count += 1
+        else:
+            gQ[-1,:] = self.Xq[:,0]**2
+
+        return gQ
+    ############################################################
+    
+    ############################################################
+    def unwrap_Qs(self):
+        """ Convenience function to extract Q0,Q1,Q2 from current state of Qparams stored as self.params. 
+            Order: Qparams = [Q0,Q1[0],..,Q1[D-1],Q2[0,0],..,Q2[0,D-1],Q2[1,1],..,Q2[1,D-1],..,Q2[D-1,D-1]]
+        """
+        # recall self.params.shape = (self.n_params,1)
+        Qparams = self.params[:,0]
+        Q0 = Qparams[0]
+        count = self.D+1
+        Q1 = Qparams[1:count]
+        if self.D > 1:
+            Q2 = np.zeros((self.D,self.D),dtype=float)
+            for di in range(self.D):
+                for dj in range(di,self.D):
+                    Q2[di,dj] = Qparams[count]
+                    count += 1
+            for di in range(1,self.D):
+                for dj in range(di):
+                    Q2[di,dj] = Q2[dj,di]
+        else:
+            Q2 = np.array([[Qparams[-1]]])
+
+        return Q0,Q1,Q2
+    ############################################################
+
+    ############################################################
+    def calc_model(self,X):
+        """ Quadratic form for D-dimensional data vector self.Xq indexed by X with shape (1,n).
+            self.params will be unwrapped into
+            Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
+            Returns: self.Xq^T Q2 self.Xq + self.Xq^T Q1 + Q0 (shape (n,))
+        """
+        if len(X.shape) != 2:
+            raise TypeError("Incompatible shape for X in quad_form(). Need (1,n), detected (" 
+                            + ','.join(['%d' % (i,) for i in X.shape]) +').')
+        if X.shape[0] != 1:
+            raise TypeError("Incompatible shape for X in quad_form(). Need (1,n), detected (" 
+                            + ','.join(['%d' % (i,) for i in X.shape]) +').')
+
+        x = self.Xq[X[0]] # (n,D)
+        Q0,Q1,Q2 = self.unwrap_Qs()
+        out = np.sum(np.dot(x,Q2)*x,axis=1) + np.dot(x,Q1) + Q0 # (n,)
+        return self.rv(out)
+    ############################################################
+
+    ############################################################
+    def calc_dmdtheta(self):
+        # self.X available as indexing array of shape (1,n)
+        return self.gradient_Q[:,self.X[0]]
+    ############################################################
+
+    
+################################################################
+
 ################################################################
 class Fit_Utilities(MLUtilities,Utilities):
     ############################################################
     # Quadratic form fitting routines
     # -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
+    # -- updated to employ Mountaineer internally, instead of scipy.optimize routines
     ############################################################
-    def __init__(self,n_params=0,verbose=True,logfile=None):
+    def __init__(self,n_params=0,verbose=False,logfile=None):
         Utilities.__init__(self)
-        self.n_params = n_params # int
+        self.n_params = n_params # int; number of parameters in loss landscape
         self.Ns_min = (self.n_params+1)*(self.n_params+2) // 2
         self.verbose = verbose
         self.logfile = logfile
         
     ############################################################
-    def get_bestfit(self,chi2,param_vals,Ns=None,tree=None):
+    def get_bestfit(self,chi2,param_vals,Ns=None,tree=None,N_evals_max=1000,call_counter=0,qstem='qwalks/',clean=True):
         """ Wrapper to extract quadratic estimator for best-fit, covariance and minimum loss. 
-             chi2: loss values (N,) 
-             param_vals: parameter vectors (N,n_params)
-             Ns: None or int: number of samples to use (default None, then calculated internally)
-             tree: None or instance of scipy.spatial.cKDTree using param_vals (useful for iterative calls).
-                                       
+             -- chi2: loss values (N,) 
+             -- param_vals: parameter vectors (N,n_params)
+             -- Ns: None or int, number of samples to use (default None, then calculated internally)
+             -- tree: None or instance of scipy.spatial.cKDTree using param_vals (useful for iterative calls).
+             -- N_evals_max: int, max number of function evaluations of quadratic form
+             -- call_counter: int (useful for storage of walks in iterative calls)
+             -- qstem: str, folder to store quad form walks 
+             -- clean: bool (default True), whether to delete quad form walks after best fit is obtained.
+                       
              Returns: covariance (D,D), params_best (D,), chi2_min (scalar),eigvals (D,),rotate(D,D)
              Rotation convention is such that y = (rotate.T) . param_vals will give vector in eigenspace. 
         """
@@ -1346,21 +1456,10 @@ class Fit_Utilities(MLUtilities,Utilities):
         dist_nn,ind_nn = tree.query(param_vals[imin],k=Ns_use) 
         # Ns_use nearest neighbours of evaluated minimum
 
-        Qparams,flag_ok_qfit = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn])
-        if flag_ok_qfit:
-            Q0,Q1,Q2 = self.unwrap_Qs(Qparams,self.n_params)
-            ##########################
-            # core steps
-            covariance = linalg.inv(Q2)
-            params_best = -0.5*np.dot(covariance,Q1)
-            chi2_min = Q0 + 0.5*np.dot(Q1,params_best)
-            eigvals,rotate = linalg.eigh(covariance,check_finite=False)
-            ##########################
-        else:
-            self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
-            eigvals = -1.0*np.ones(self.n_params)
-            covariance,params_best,chi2_min,rotate = 0,0,0,0
-
+        covariance,params_best,chi2_min,eigvals,rotate = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn],
+                                                                            N_evals_max=N_evals_max,call_counter=call_counter,qstem=qstem)
+        print(call_counter,params_best,chi2_min,chi2[imin],ind_nn.size)
+        
         if np.any(eigvals < 0.0): 
             if Ns_use >= 0.5*chi2.size:
                 self.print_this('! Warning !',self.logfile)
@@ -1370,8 +1469,13 @@ class Fit_Utilities(MLUtilities,Utilities):
                 self.print_this('! Warning !',self.logfile)
                 eigvals[:] = np.inf
             else:
-                covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(2*Ns_use),tree=tree)
+                self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
+                covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(2*Ns_use),tree=tree,qstem=qstem,
+                                                                                  N_evals_max=N_evals_max,call_counter=call_counter+1)
 
+        if clean & (call_counter==0):
+            subprocess.run(f"rm -rf {qstem}",shell=True)
+        
         # if lambda,R = eigh(C), then C = R Lambda R^T where Lambda is diagonal with lamda on the diagonal.
         # so y = R^T param_vals will give a correctly rotated parameter vector
         # such that the norm relative to C or C^-1 is preserved.
@@ -1381,60 +1485,7 @@ class Fit_Utilities(MLUtilities,Utilities):
     ############################################################
 
     ############################################################
-    def quad_form(self,Qparams,x):
-        """ Quadratic form for D-dimensional data vector x.
-            Expect x.shape = (N,D)
-            Qparams: ((D+1)(D+2)/2,), to be unwrapped into
-            Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
-            Returns: x^T Q2 x + x^T Q1 + Q0 (shape (N,))
-        """
-        if len(x.shape) != 2:
-            raise TypeError("Incompatible shape for x in quad_form(). Need (N,D), detected (" 
-                            + ','.join(['%d' % (i,) for i in x.shape]) +').')
-        D = x.shape[1]
-        Q0,Q1,Q2 = self.unwrap_Qs(Qparams,D)
-        return np.sum(np.dot(x,Q2)*x,axis=1) + np.dot(x,Q1) + Q0
-    ############################################################
-
-    ############################################################
-    def quad_residuals(self,Qparams,x,y):
-        """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
-        return y - self.quad_form(Qparams,x)
-    ############################################################
-
-
-    ############################################################
-    def quad_error(self,Qparams,x,y):
-        """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
-        return np.sum((y - self.quad_form(Qparams,x))**2)
-    ############################################################
-    
-    ############################################################
-    def unwrap_Qs(self,Qparams,D):
-        """ Convenience function to extract Q0,Q1,Q2 for use in quad_form(). """
-        if Qparams.size != int((D+1)*(D+2)/2):
-            raise TypeError("Incompatible shape for Qparams in unwrap_Qs(). Need ((D+1)(D+2)/2,), detected (" 
-                            + ','.join(['%d' % (i,) for i in Qparams.shape]) +').')
-        Q0 = Qparams[0]
-        count = D+1
-        Q1 = Qparams[1:count]
-        if D > 1:
-            Q2 = np.zeros((D,D),dtype=float)
-            for di in range(D):
-                for dj in range(di,D):
-                    Q2[di,dj] = Qparams[count]
-                    count += 1
-            for di in range(1,D):
-                for dj in range(di):
-                    Q2[di,dj] = Q2[dj,di]
-        else:
-            Q2 = np.array([[Qparams[-1]]])
-
-        return Q0,Q1,Q2
-    ############################################################
-
-    ############################################################
-    def fit_quad_form(self,y,x):
+    def fit_quad_form(self,y,x,N_evals_max=1000,call_counter=0,qstem='qwalks/'):
         """ Fit quadratic form y = f(x) = x^T Q2 x + x^T Q1 + Q0 given N samples of y and x.
             Expect y and x to have shape (N,) and (N,D).
             Returns: 
@@ -1442,28 +1493,235 @@ class Fit_Utilities(MLUtilities,Utilities):
             -- flag_ok_qfit: boolean flag to indicate if fit succeeded.
         """
         flag_ok_qfit = True
-
-        if len(x.shape) != 2:
-            raise TypeError("Incompatible shape for x in fit_quad_form(). Need (N,D), detected (" 
-                            + ','.join(['%d' % (i,) for i in x.shape]) +').')
-        D = x.shape[1]
-        if y.size != x.shape[0]:
-            raise TypeError("Incompatible shape for y in fit_quad_form(). Need ({0:d},), detected (".format(x.shape[0]) 
-                            + ','.join(['%d' % (i,) for i in y.shape]) +').')
-        Qparams_0 = np.ones(int((D+1)*(D+2)/2),dtype=float)
+        qf = QuadraticForm(Xq=x)
+        if len(y.shape) != 1:
+            raise Exception("Expecting y.shape = (N,) in fit_quad_form().")
+        if x.shape[0] != y.size:
+            raise Exception("Expecting x.shape[0] = y.size in fit_quad_form().")
+        
+        Qparams_0 = np.ones(qf.n_params,dtype=float)
         try:
-            # REPLACE THIS WITH A MOUNTAINEER INSTANCE!
-            opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
-            # opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
-            output = opt_res.x
-        except ValueError as exc:
-            self.print_this(exc.args,self.logfile)
-            output = 0.0*Qparams_0
-            flag_ok_qfit = False
+            file_stem_quad = qstem + 'call_{0:d}'.format(call_counter)
+            Path(file_stem_quad).mkdir(parents=True,exist_ok=True) # folder to store all iterations
+            file_stem_quad += '/qf'
 
-        return output,flag_ok_qfit
+            param_mins = Qparams_0 - 1.0
+            param_maxs = Qparams_0 + 1.0
+            
+            dp = {'N_evals_max':N_evals_max,'survey_frac':0.01,'file_stem':file_stem_quad,'model':QuadraticForm,'n_params':qf.n_params,
+                  'param_mins':param_mins,'param_maxs':param_maxs,
+                  'X':self.rv(np.arange(y.size)),'Y':self.rv(y),'loss':Chi2,'walks_exist':False,
+                  'seed':None,'verbose':self.verbose,'logfile':self.logfile}#,'loss_params':loss_params}
+            mnt = Mountaineer(data_pack=dp,Xq=x) # Xq=x is passed to internal QuadraticForm instance
+
+            walks = mnt.explore() 
+            qf_inst = copy.deepcopy(mnt.model_inst)
+            
+            qdata = mnt.load().T # (nsamp,nparam+1)
+            qdata = qdata[~np.isnan(qdata[:,0])]
+            qdata = qdata[np.isfinite(qdata[:,0])]
+            qdata = qdata.T
+            ibest = np.argmin(qdata[0])
+            chi2 = qdata[0,ibest]
+            Qparams = qdata[1:,ibest].copy()  
+            # # REPLACE THIS WITH A MOUNTAINEER INSTANCE!
+            # opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
+            # # opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
+            # Qparams = opt_res.x
+        except Exception as exc:
+            self.print_this(exc.args,self.logfile)
+            Qparams = 0.0*Qparams_0
+            flag_ok_qfit = False
+        
+        if flag_ok_qfit:
+            qf.params[:,0] = Qparams
+            Q0,Q1,Q2 = qf.unwrap_Qs()
+            ##########################
+            # core steps
+            covariance,detQ2 = self.svd_inv(Q2,hermitian=True) #linalg.inv(Q2)
+            params_best = -0.5*np.dot(covariance,Q1)
+            chi2_min = Q0 + 0.5*np.dot(Q1,params_best)
+            eigvals,rotate = linalg.eigh(covariance,check_finite=False)
+            ##########################
+        else:
+            eigvals = -1.0*np.ones(self.n_params)
+            covariance,params_best,chi2_min,rotate = 0,0,0,0
+            
+        return covariance,params_best,chi2_min,eigvals,rotate
     ############################################################
     ############################################################
+
+
+
+
+
+# ################################################################
+# class Fit_Utilities(MLUtilities,Utilities):
+#     ############################################################
+#     # Quadratic form fitting routines
+#     # -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
+#     ############################################################
+#     def __init__(self,n_params=0,verbose=True,logfile=None):
+#         Utilities.__init__(self)
+#         self.n_params = n_params # int
+#         self.Ns_min = (self.n_params+1)*(self.n_params+2) // 2
+#         self.verbose = verbose
+#         self.logfile = logfile
+        
+#     ############################################################
+#     def get_bestfit(self,chi2,param_vals,Ns=None,tree=None):
+#         """ Wrapper to extract quadratic estimator for best-fit, covariance and minimum loss. 
+#              chi2: loss values (N,) 
+#              param_vals: parameter vectors (N,n_params)
+#              Ns: None or int: number of samples to use (default None, then calculated internally)
+#              tree: None or instance of scipy.spatial.cKDTree using param_vals (useful for iterative calls).
+                                       
+#              Returns: covariance (D,D), params_best (D,), chi2_min (scalar),eigvals (D,),rotate(D,D)
+#              Rotation convention is such that y = (rotate.T) . param_vals will give vector in eigenspace. 
+#         """
+#         if len(param_vals.shape) != 2:
+#             raise Exception("Expecting param_vals of shape (N,{0:d}) in get_bestfit()".format(self.n_params))
+#         if len(chi2.shape) != 1:
+#             raise Exception("Expecting chi2 of shape (N,) in get_bestfit()")
+#         if chi2.size != param_vals.shape[0]:
+#             raise Exception("chi2 and param_vals incompatible in get_bestfit()")
+#         if param_vals.shape[1] != self.n_params:
+#             raise Exception("Expecting param_vals of shape (N,{0:d}) in get_bestfit(), detected (N,{1:d})".format(self.n_params,param_vals.shape[1]))
+        
+#         if Ns is not None:
+#             Ns_use = Ns
+#         else:
+#             # Ns_use = np.max([int(0.02*chi2.size),10*self.Ns_min])
+#             # Ns_use = np.min([chi2.size,Ns_use])
+#             Ns_use = 2*self.Ns_min
+
+#         if chi2.size <= Ns_use:
+#             raise ValueError('Too few sampling points. Use higher Nsamp or append chain with a few more iterations.')
+        
+#         imin = chi2.argmin()
+#         tree = tree if tree is not None else spatial.cKDTree(param_vals)
+#         dist_nn,ind_nn = tree.query(param_vals[imin],k=Ns_use) 
+#         # Ns_use nearest neighbours of evaluated minimum
+
+#         Qparams,flag_ok_qfit = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn])
+#         if flag_ok_qfit:
+#             Q0,Q1,Q2 = self.unwrap_Qs(Qparams,self.n_params)
+#             ##########################
+#             # core steps
+#             covariance = linalg.inv(Q2)
+#             params_best = -0.5*np.dot(covariance,Q1)
+#             chi2_min = Q0 + 0.5*np.dot(Q1,params_best)
+#             eigvals,rotate = linalg.eigh(covariance,check_finite=False)
+#             ##########################
+#         else:
+#             self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
+#             eigvals = -1.0*np.ones(self.n_params)
+#             covariance,params_best,chi2_min,rotate = 0,0,0,0
+
+#         if np.any(eigvals < 0.0): 
+#             if Ns_use >= 0.5*chi2.size:
+#                 self.print_this('! Warning !',self.logfile)
+#                 self.print_this('... positive definite quadratic form not obtained with as much as 50% of sample',self.logfile)
+#                 self.print_this('... use higher Nsamp or append chain with a few more iterations',self.logfile)
+#                 self.print_this('... returning inf eigen-values',self.logfile)
+#                 self.print_this('! Warning !',self.logfile)
+#                 eigvals[:] = np.inf
+#             else:
+#                 covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(2*Ns_use),tree=tree)
+
+#         # if lambda,R = eigh(C), then C = R Lambda R^T where Lambda is diagonal with lamda on the diagonal.
+#         # so y = R^T param_vals will give a correctly rotated parameter vector
+#         # such that the norm relative to C or C^-1 is preserved.
+#         # (note C^-1 = (R^T)^-1 Lambda^-1 R^-1 = R Lambda^-1 R^T).
+#         # E.g.: Q = p^T C^-1 p = p^T R Lambda^-1 R^T p = y^T Lambda^-1 y.
+#         return covariance,params_best,chi2_min,eigvals,rotate
+#     ############################################################
+
+#     ############################################################
+#     def quad_form(self,Qparams,x):
+#         """ Quadratic form for D-dimensional data vector x.
+#             Expect x.shape = (N,D)
+#             Qparams: ((D+1)(D+2)/2,), to be unwrapped into
+#             Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
+#             Returns: x^T Q2 x + x^T Q1 + Q0 (shape (N,))
+#         """
+#         if len(x.shape) != 2:
+#             raise TypeError("Incompatible shape for x in quad_form(). Need (N,D), detected (" 
+#                             + ','.join(['%d' % (i,) for i in x.shape]) +').')
+#         D = x.shape[1]
+#         Q0,Q1,Q2 = self.unwrap_Qs(Qparams,D)
+#         return np.sum(np.dot(x,Q2)*x,axis=1) + np.dot(x,Q1) + Q0
+#     ############################################################
+
+#     ############################################################
+#     def quad_residuals(self,Qparams,x,y):
+#         """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
+#         return y - self.quad_form(Qparams,x)
+#     ############################################################
+
+
+#     ############################################################
+#     def quad_error(self,Qparams,x,y):
+#         """Wrapper for calculating residuals. Assumes Qparams ((D+1)(D+2)/2,), x (N,D) and y (N,)."""
+#         return np.sum((y - self.quad_form(Qparams,x))**2)
+#     ############################################################
+    
+#     ############################################################
+#     def unwrap_Qs(self,Qparams,D):
+#         """ Convenience function to extract Q0,Q1,Q2 for use in quad_form(). """
+#         if Qparams.size != int((D+1)*(D+2)/2):
+#             raise TypeError("Incompatible shape for Qparams in unwrap_Qs(). Need ((D+1)(D+2)/2,), detected (" 
+#                             + ','.join(['%d' % (i,) for i in Qparams.shape]) +').')
+#         Q0 = Qparams[0]
+#         count = D+1
+#         Q1 = Qparams[1:count]
+#         if D > 1:
+#             Q2 = np.zeros((D,D),dtype=float)
+#             for di in range(D):
+#                 for dj in range(di,D):
+#                     Q2[di,dj] = Qparams[count]
+#                     count += 1
+#             for di in range(1,D):
+#                 for dj in range(di):
+#                     Q2[di,dj] = Q2[dj,di]
+#         else:
+#             Q2 = np.array([[Qparams[-1]]])
+
+#         return Q0,Q1,Q2
+#     ############################################################
+
+#     ############################################################
+#     def fit_quad_form(self,y,x):
+#         """ Fit quadratic form y = f(x) = x^T Q2 x + x^T Q1 + Q0 given N samples of y and x.
+#             Expect y and x to have shape (N,) and (N,D).
+#             Returns: 
+#             -- Qparams ((D+1)(D+2)/2,) that can be unwrapped into Q0 (scalar), Q1 (D,), Q2 (D,D).
+#             -- flag_ok_qfit: boolean flag to indicate if fit succeeded.
+#         """
+#         flag_ok_qfit = True
+
+#         if len(x.shape) != 2:
+#             raise TypeError("Incompatible shape for x in fit_quad_form(). Need (N,D), detected (" 
+#                             + ','.join(['%d' % (i,) for i in x.shape]) +').')
+#         D = x.shape[1]
+#         if y.size != x.shape[0]:
+#             raise TypeError("Incompatible shape for y in fit_quad_form(). Need ({0:d},), detected (".format(x.shape[0]) 
+#                             + ','.join(['%d' % (i,) for i in y.shape]) +').')
+#         Qparams_0 = np.ones(int((D+1)*(D+2)/2),dtype=float)
+#         try:
+#             # REPLACE THIS WITH A MOUNTAINEER INSTANCE!
+#             opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
+#             # opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
+#             output = opt_res.x
+#         except ValueError as exc:
+#             self.print_this(exc.args,self.logfile)
+#             output = 0.0*Qparams_0
+#             flag_ok_qfit = False
+
+#         return output,flag_ok_qfit
+#     ############################################################
+#     ############################################################
+
     
     
     # ###########################################
