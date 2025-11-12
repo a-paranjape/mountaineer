@@ -1304,9 +1304,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
 ################################################################
 class QuadraticForm(Model):
     ############################################################
-    def __init__(self,n_params=None,Xq=None):
+    def __init__(self,n_params=None,Xq=None,Yq=None):
         """ Routines to evaluate quadratic form for D-dimensional data vector Xq and compare to values Yq.
             -- Xq: array of shape (N,D)
+            -- Yq: array of shape (N,)
             Quadratic form parameters organised as 
             Qparams: ((D+1)(D+2)/2,), to be unwrapped into
             Q0: scalar; Q1: (D,) vector; Q2: (D,D) symmetric matrix
@@ -1315,14 +1316,22 @@ class QuadraticForm(Model):
         """
         if Xq is None:
             raise Exception("Xq must be array in QuadraticForm().")
+        if Yq is None:
+            raise Exception("Yq must be array in QuadraticForm().")
         if len(Xq.shape) != 2:
             raise Exception("Expecting Xq.shape = (N,D) in QuadraticForm().")
+        if len(Yq.shape) != 1:
+            raise Exception("Expecting Yq.shape = (N,) in QuadraticForm().")
+        if Xq.shape[0] != Yq.size:
+            raise Exception("Expecting Xq.shape[0] = Yq.size in QuadraticForm().")
 
         self.Xq = Xq
+        self.Yq = Yq
         self.D = self.Xq.shape[1]
         Model.__init__(self,n_params=((self.D+1)*(self.D+2))//2)
 
         self.gradient_Q = self.calc_gradient() # indep of quad params, so calculate only once
+        self.sigma_guess = self.calc_sigma()
 
     ############################################################
 
@@ -1400,17 +1409,46 @@ class QuadraticForm(Model):
         return self.gradient_Q[:,self.X[0]]
     ############################################################
 
+    ############################################################
+    def calc_sigma(self,trim=True):
+        """ Convenience function to calculate anisotropic dispersions.
+            Adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
+            Input:
+              -- trim: boolean. if True, trim large chi2 values (default True)
+            Returns:
+              -- params_sig: array (D,) containing parameter dispersions
+        """
+        # setup exp(-chi^2/2) for estimating dispersion
+        prob = -0.5*(self.Yq - self.Yq.min())
+        if trim:
+            prob[prob < -20.0] = 0.0 # if chi2 is too bad, contribute to width wrongly by giving unit weight
+        prob = np.exp(prob)
+        params_sig = np.zeros(self.D,dtype=float)
+
+        # estimate dispersion along each parameter axis as weighted integral
+        for p in range(self.D):
+            sorter = self.Xq[:,p].argsort()
+            param_sorted = self.Xq[:,p][sorter]
+            prob_param = prob[sorter]
+            mean = np.trapz(prob_param*param_sorted,x=param_sorted)/np.trapz(prob_param,x=param_sorted)
+            sig_temp = np.sqrt(np.trapz(prob_param*(param_sorted-mean)**2,x=param_sorted)
+                               /np.trapz(prob_param,x=param_sorted))
+            params_sig[p] = sig_temp
+
+        return params_sig
+    ############################################################
+
     
 ################################################################
 
 ################################################################
 class Fit_Utilities(MLUtilities,Utilities):
     ############################################################
-    # Quadratic form fitting routines
-    # -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
-    # -- updated to employ Mountaineer internally, instead of scipy.optimize routines
-    ############################################################
     def __init__(self,n_params=0,verbose=False,logfile=None):
+        """ Quadratic form fitting routines
+            -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
+            -- updated to employ Mountaineer internally, instead of scipy.optimize routines
+        """
         Utilities.__init__(self)
         self.n_params = n_params # int; number of parameters in loss landscape
         self.Ns_min = (self.n_params+1)*(self.n_params+2) // 2
@@ -1418,16 +1456,19 @@ class Fit_Utilities(MLUtilities,Utilities):
         self.logfile = logfile
         
     ############################################################
-    def get_bestfit(self,chi2,param_vals,Ns=None,tree=None,N_evals_max=1000,call_counter=0,qstem='qwalks/',clean=True):
+    def get_bestfit(self,chi2,param_vals,Ns=None,tree=None,N_evals_max=30000,tol=0.01,qstem='qwalks/',clean=True,call_counter=0,Qparams0=None,ev_prev=None):
         """ Wrapper to extract quadratic estimator for best-fit, covariance and minimum loss. 
              -- chi2: loss values (N,) 
              -- param_vals: parameter vectors (N,n_params)
              -- Ns: None or int, number of samples to use (default None, then calculated internally)
              -- tree: None or instance of scipy.spatial.cKDTree using param_vals (useful for iterative calls).
              -- N_evals_max: int, max number of function evaluations of quadratic form
-             -- call_counter: int (useful for storage of walks in iterative calls)
+             -- tol: float (default 0.1), relative tolerance for convergence of eig vals
              -- qstem: str, folder to store quad form walks 
              -- clean: bool (default True), whether to delete quad form walks after best fit is obtained.
+             -- call_counter: int (useful for storage of walks in iterative calls)
+             -- Qparams0: None (default) or 1-d array of size (n_params+1)*(n_params+2)/2, guess for quad form params
+             -- ev_prev: None or float array (n_params,), eig vals form previous iteration
                        
              Returns: covariance (D,D), params_best (D,), chi2_min (scalar),eigvals (D,),rotate(D,D)
              Rotation convention is such that y = (rotate.T) . param_vals will give vector in eigenspace. 
@@ -1446,7 +1487,7 @@ class Fit_Utilities(MLUtilities,Utilities):
         else:
             # Ns_use = np.max([int(0.02*chi2.size),10*self.Ns_min])
             # Ns_use = np.min([chi2.size,Ns_use])
-            Ns_use = 2*self.Ns_min
+            Ns_use = 5*self.Ns_min #np.max([5*self.Ns_min,int(0.01*chi2.size)])
 
         if chi2.size <= Ns_use:
             raise ValueError('Too few sampling points. Use higher Nsamp or append chain with a few more iterations.')
@@ -1456,11 +1497,13 @@ class Fit_Utilities(MLUtilities,Utilities):
         dist_nn,ind_nn = tree.query(param_vals[imin],k=Ns_use) 
         # Ns_use nearest neighbours of evaluated minimum
 
-        covariance,params_best,chi2_min,eigvals,rotate = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn],
-                                                                            N_evals_max=N_evals_max,call_counter=call_counter,qstem=qstem)
-        print(call_counter,params_best,chi2_min,chi2[imin],ind_nn.size)
+        eigvals_prev = ev_prev if ev_prev is not None else np.zeros(self.n_params) 
+        covariance,params_best,chi2_min,eigvals,rotate,Qparams = self.fit_quad_form(chi2[ind_nn],param_vals[ind_nn],Qparams0=Qparams0,
+                                                                                    N_evals_max=N_evals_max,call_counter=call_counter,qstem=qstem)
+        ev_err = np.sqrt(np.mean((eigvals/(eigvals_prev + 1e-15) - 1)**2))
         
-        if np.any(eigvals < 0.0): 
+        print(call_counter,ev_err,tol,ind_nn.size)
+        if np.any(eigvals < 0.0) | (ev_err >= tol): 
             if Ns_use >= 0.5*chi2.size:
                 self.print_this('! Warning !',self.logfile)
                 self.print_this('... positive definite quadratic form not obtained with as much as 50% of sample',self.logfile)
@@ -1469,9 +1512,15 @@ class Fit_Utilities(MLUtilities,Utilities):
                 self.print_this('! Warning !',self.logfile)
                 eigvals[:] = np.inf
             else:
-                self.print_this('! Warning !... quadratic form fitting failed. Increasing sample size',self.logfile)
-                covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(2*Ns_use),tree=tree,qstem=qstem,
-                                                                                  N_evals_max=N_evals_max,call_counter=call_counter+1)
+                c_str = 'not converged'
+                if np.any(eigvals < 0.0):
+                    c_str = 'failed'
+                self.print_this('! Warning !... quadratic form fitting '+c_str+'. Increasing sample size',self.logfile)
+                covariance,params_best,chi2_min,eigvals,rotate = self.get_bestfit(chi2,param_vals,Ns=int(1.2*Ns_use),tree=tree,qstem=qstem,
+                                                                                  N_evals_max=N_evals_max,call_counter=call_counter+1,Qparams0=Qparams,
+                                                                                  tol=tol,ev_prev=eigvals)
+        else:
+            self.print_this('... converged fit found!',self.logfile)
 
         if clean & (call_counter==0):
             subprocess.run(f"rm -rf {qstem}",shell=True)
@@ -1485,7 +1534,7 @@ class Fit_Utilities(MLUtilities,Utilities):
     ############################################################
 
     ############################################################
-    def fit_quad_form(self,y,x,N_evals_max=1000,call_counter=0,qstem='qwalks/'):
+    def fit_quad_form(self,y,x,N_evals_max=1000,call_counter=0,Qparams0=None,qstem='qwalks/'):
         """ Fit quadratic form y = f(x) = x^T Q2 x + x^T Q1 + Q0 given N samples of y and x.
             Expect y and x to have shape (N,) and (N,D).
             Returns: 
@@ -1493,29 +1542,61 @@ class Fit_Utilities(MLUtilities,Utilities):
             -- flag_ok_qfit: boolean flag to indicate if fit succeeded.
         """
         flag_ok_qfit = True
-        qf = QuadraticForm(Xq=x)
-        if len(y.shape) != 1:
-            raise Exception("Expecting y.shape = (N,) in fit_quad_form().")
-        if x.shape[0] != y.size:
-            raise Exception("Expecting x.shape[0] = y.size in fit_quad_form().")
-        
-        Qparams_0 = np.ones(qf.n_params,dtype=float)
+        qf = QuadraticForm(Xq=x,Yq=y)
+
+        if Qparams0 is None:
+            imin = y.argmin()
+            Qparams0 = np.zeros(qf.n_params,dtype=float)
+            nu_best = x[imin]/(qf.sigma_guess + 1e-15)
+            Qparams0[0] = y[imin] + np.sum(nu_best**2)
+            count = qf.D+1
+            Qparams0[1:count] = -2*nu_best/(qf.sigma_guess + 1e-15)
+            if qf.D > 1:
+                for di in range(qf.D):
+                    for dj in range(di,qf.D):
+                        if di == dj:
+                            Qparams0[count] = 1/(qf.sigma_guess[di] + 1e-15)**2
+                        count += 1
+            else:
+                Qparams0[-1] = 1/(qf.sigma_guess[0] + 1e-15)**2
+            
         try:
             file_stem_quad = qstem + 'call_{0:d}'.format(call_counter)
             Path(file_stem_quad).mkdir(parents=True,exist_ok=True) # folder to store all iterations
             file_stem_quad += '/qf'
 
-            param_mins = Qparams_0 - 1.0
-            param_maxs = Qparams_0 + 1.0
+            param_mins = 1.0*Qparams0
+            param_maxs = 1.0*Qparams0
+
+            qf.params = self.cv(Qparams0)
+            Q00,Q10,Q20 = qf.unwrap_Qs()
+            diagQ2 = np.fabs(np.diagonal(Q20) + 1e-15)
+
+            count = qf.D+1
+            width = 0.01
+            dQ01 = width*np.fabs(Qparams0[:count])
+            param_mins[:count] -= dQ01
+            param_maxs[:count] += dQ01
+            for di in range(qf.D):
+                for dj in range(di,qf.D):
+                    if di == dj:
+                        dsiginv2 = width*np.fabs(Qparams0[count])
+                        param_mins[count] -= dsiginv2
+                        param_maxs[count] += dsiginv2
+                    else:
+                        sigi_sigj = np.sqrt(diagQ2[di]*diagQ2[dj])
+                        param_mins[count] = -width*sigi_sigj
+                        param_maxs[count] =  width*sigi_sigj
+                    count += 1
             
-            dp = {'N_evals_max':N_evals_max,'survey_frac':0.01,'file_stem':file_stem_quad,'model':QuadraticForm,'n_params':qf.n_params,
+            dp = {'N_evals_max':N_evals_max,'survey_frac':0.05,'file_stem':file_stem_quad,'model':QuadraticForm,'n_params':qf.n_params,
                   'param_mins':param_mins,'param_maxs':param_maxs,
                   'X':self.rv(np.arange(y.size)),'Y':self.rv(y),'loss':Chi2,'walks_exist':False,
                   'seed':None,'verbose':self.verbose,'logfile':self.logfile}#,'loss_params':loss_params}
-            mnt = Mountaineer(data_pack=dp,Xq=x) # Xq=x is passed to internal QuadraticForm instance
+            mnt = Mountaineer(data_pack=dp,Xq=x,Yq=y) # Xq=x,Yq=y is passed to internal QuadraticForm instance
 
             walks = mnt.explore() 
-            qf_inst = copy.deepcopy(mnt.model_inst)
+            # qf_inst = copy.deepcopy(mnt.model_inst)
             
             qdata = mnt.load().T # (nsamp,nparam+1)
             qdata = qdata[~np.isnan(qdata[:,0])]
@@ -1524,13 +1605,9 @@ class Fit_Utilities(MLUtilities,Utilities):
             ibest = np.argmin(qdata[0])
             chi2 = qdata[0,ibest]
             Qparams = qdata[1:,ibest].copy()  
-            # # REPLACE THIS WITH A MOUNTAINEER INSTANCE!
-            # opt_res = optimize.least_squares(self.quad_residuals,Qparams_0,args=(x,y))
-            # # opt_res = optimize.minimize(self.quad_error,Qparams_0,args=(x,y))
-            # Qparams = opt_res.x
         except Exception as exc:
             self.print_this(exc.args,self.logfile)
-            Qparams = 0.0*Qparams_0
+            Qparams = 0.0*Qparams0
             flag_ok_qfit = False
         
         if flag_ok_qfit:
@@ -1547,7 +1624,7 @@ class Fit_Utilities(MLUtilities,Utilities):
             eigvals = -1.0*np.ones(self.n_params)
             covariance,params_best,chi2_min,rotate = 0,0,0,0
             
-        return covariance,params_best,chi2_min,eigvals,rotate
+        return covariance,params_best,chi2_min,eigvals,rotate,Qparams
     ############################################################
     ############################################################
 
