@@ -340,6 +340,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             -- 'model': sub-class of Model with user-defined calc_model() and calc_dmdtheta() methods.
             -- 'n_params': int, number of parameters in model.
             -- 'param_mins','param_maxs': array-likes of floats (n_params,) - guesses for minimum and maximum values for parameters 
+            -- 'n_proc': int, number of processes to use for training walkers (default 1)
             
             ** passed to Walker instances **
             -- 'X': array of X [control variable] (1,n_samp)
@@ -374,6 +375,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         self.n_params = data_pack.get('n_params',None)
         self.param_mins = data_pack.get('param_mins',None)
         self.param_maxs = data_pack.get('param_maxs',None)
+        self.n_proc = data_pack.get('n_proc',1) # will be reset by self.climb() if larger than self.N_walker
         ####
         # will be set by self.create_survey()
         self.survey_params = None
@@ -1066,6 +1068,19 @@ class Mountaineer(Module,MLUtilities,Utilities):
     ############################################################
 
     ###########################################
+    def queue_climb(self,w,walker,ptrain,N_walker,mdict):
+        """ Convenience function for use with MLUtilities.run_processes(). Expect w >= 0."""
+
+        walker.train(params=ptrain)
+        
+        mdict[w] = {'walker':walker}
+        
+        if self.verbose:
+            self.status_bar(w,N_walker)
+        return
+    ###########################################
+    
+    ###########################################
     def climb(self):
         """ Train all walkers and store outputs. Should be called after distribute. """
         if self.walks_exist:
@@ -1076,13 +1091,48 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('Climbing...',self.logfile)
 
+        self.n_proc = np.min([self.N_walker,self.n_proc])
+        
+        if self.n_proc == 1:
+            if self.verbose:
+                self.print_this("... training using 1 process",self.logfile)                
+            for w in range(self.N_walker):
+                self.walkers[w].train(params=self.params_train[w])
+                if self.verbose:
+                    self.status_bar(w,self.N_walker)
+        else:
+            tasks = []
+            for w in range(self.N_walker):
+                walker = copy.deepcopy(self.walkers[w])
+                ptrain = copy.deepcopy(self.params_train[w])
+                tasks.append((walker,ptrain,self.N_walker))
+                
+            if len(tasks) != self.N_walker:
+                raise Exception("Mismatched length of tasks and self.N_walker.")
+            
+            if self.verbose:
+                self.print_this("... training using {0:d} processes".format(self.n_proc),self.logfile)                
+            trained_walkers = self.run_processes(tasks,self.queue_climb,self.n_proc)
+
+            del tasks
+            
+            for w in range(self.N_walker):
+                self.walkers[w] = copy.deepcopy(trained_walkers[w]['walker'])
+
+            del trained_walkers
+            gc.collect()
+                
         for w in range(self.N_walker):
-            self.walkers[w].train(params=self.params_train[w])
             self.N_evals_model += self.walkers[w].N_evals_model
             self.N_evals_deriv += self.walkers[w].N_evals_deriv
-            if self.verbose:
-                self.status_bar(w,self.N_walker)
-        
+
+        # for w in range(self.N_walker):
+        #     self.walkers[w].train(params=self.params_train[w])
+        #     self.N_evals_model += self.walkers[w].N_evals_model
+        #     self.N_evals_deriv += self.walkers[w].N_evals_deriv
+        #     if self.verbose:
+        #         self.status_bar(w,self.N_walker)
+                
         if self.verbose:
             self.print_this('... setting final parameter ranges',self.logfile)
         pmaxs = -np.inf*np.ones(self.n_params)
@@ -1444,7 +1494,7 @@ class QuadraticForm(Model):
 ################################################################
 class Fit_Utilities(MLUtilities,Utilities):
     ############################################################
-    def __init__(self,n_params=0,verbose=False,logfile=None):
+    def __init__(self,n_params=0,n_proc=1,verbose=False,logfile=None):
         """ Quadratic form fitting routines
             -- adapted from PICASA: https://bitbucket.org/aparanjape/picasa/
             -- updated to employ Mountaineer internally, instead of scipy.optimize routines
@@ -1452,6 +1502,7 @@ class Fit_Utilities(MLUtilities,Utilities):
         Utilities.__init__(self)
         self.n_params = n_params # int; number of parameters in loss landscape
         self.Ns_min = (self.n_params+1)*(self.n_params+2) // 2
+        self.n_proc = n_proc # int; number of processes for Mountaineer walks. 
         self.verbose = verbose
         self.logfile = logfile
         
@@ -1487,7 +1538,7 @@ class Fit_Utilities(MLUtilities,Utilities):
         else:
             # Ns_use = np.max([int(0.02*chi2.size),10*self.Ns_min])
             # Ns_use = np.min([chi2.size,Ns_use])
-            Ns_use = 5*self.Ns_min #np.max([5*self.Ns_min,int(0.01*chi2.size)])
+            Ns_use = 5*self.Ns_min 
 
         if chi2.size <= Ns_use:
             raise ValueError('Too few sampling points. Use higher Nsamp or append chain with a few more iterations.')
@@ -1590,7 +1641,7 @@ class Fit_Utilities(MLUtilities,Utilities):
                     count += 1
             
             dp = {'N_evals_max':N_evals_max,'survey_frac':0.05,'file_stem':file_stem_quad,'model':QuadraticForm,'n_params':qf.n_params,
-                  'param_mins':param_mins,'param_maxs':param_maxs,
+                  'param_mins':param_mins,'param_maxs':param_maxs,'n_proc':self.n_proc,
                   'X':self.rv(np.arange(y.size)),'Y':self.rv(y),'loss':Chi2,'walks_exist':False,
                   'seed':None,'verbose':self.verbose,'logfile':self.logfile}#,'loss_params':loss_params}
             mnt = Mountaineer(data_pack=dp,Xq=x,Yq=y) # Xq=x,Yq=y is passed to internal QuadraticForm instance
