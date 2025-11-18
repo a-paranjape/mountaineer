@@ -215,8 +215,8 @@ class Walker(Module,MLUtilities,Utilities):
         loss = loss_inst.forward(Ypred)
         
         #######################
-        # modified Oct 28, 2025
-        prior_diff = (self.model.params - self.model.prior_mean)*np.sqrt(self.model.prior_invsig2)
+        # modified Oct 28, 2025; bug fix Nov 18, 2025
+        prior_diff = (self.model.params[:,0] - self.model.prior_mean)*np.sqrt(self.model.prior_invsig2)
         loss += np.sum(prior_diff**2)
         #######################
         
@@ -639,8 +639,8 @@ class Mountaineer(Module,MLUtilities,Utilities):
             survey_loss[s] = loss_inst.forward(Ypred)
         
             #######################
-            # modified Oct 31, 2025
-            prior_diff = (model_survey.params - model_survey.prior_mean)*np.sqrt(model_survey.prior_invsig2)
+            # modified Oct 31, 2025; bug fix Nov 18, 2025
+            prior_diff = (model_survey.params[:,0] - model_survey.prior_mean)*np.sqrt(model_survey.prior_invsig2)
             survey_loss[s] += np.sum(prior_diff**2)
             #######################
         
