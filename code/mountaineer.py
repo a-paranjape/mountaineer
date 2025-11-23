@@ -278,6 +278,9 @@ class Model(Module,MLUtilities):
         dmdtheta = self.calc_dmdtheta() # (n_params,n_samp)
 
         self.dLdtheta = np.dot(dmdtheta,dLdm.T) # (n_params,1)
+        # self.dLdtheta = self.dLdtheta.T # (1,nparams)
+        # self.dLdtheta += 2*(self.params[:,0] - self.prior_mean)*self.prior_invsig2 # remaining accounted in sgd step
+        # self.dLdtheta = self.dLdtheta.T # (nparams,1)
         if self.adam:
             self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdtheta
             self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdtheta**2
@@ -308,13 +311,13 @@ class Model(Module,MLUtilities):
             dtheta = self.dLdtheta
 
         #######################
-        # modified Oct 28, 2025
+        # modified Oct 28, 2025; bug fix Nov 23, 2025
         self.params = self.params.T # temporarily convert from (nparam,1) to (1,nparam)
-        self.params *= (1 - lrate*self.prior_invsig2) # eqn 7.5 of DeepLearning book
-        self.params -= lrate*(dtheta.T - self.prior_invsig2*self.prior_mean) # note dtheta.T to maintain (1,nparam)
+        self.params *= (1 - 2*lrate*self.prior_invsig2) # eqn 7.5 of DeepLearning book; note factor 2 to match Bayesian conventions
+        self.params -= lrate*(dtheta.T - 2*self.prior_invsig2*self.prior_mean) # note dtheta.T to maintain (1,nparam)
         self.params = self.params.T # back to (nparam,1)
-        #######################            
-        # self.params = self.params - lrate*dtheta
+        #######################
+        self.params = self.params - lrate*dtheta
         
         return 
     ###########################################
@@ -577,6 +580,16 @@ class Mountaineer(Module,MLUtilities,Utilities):
 
         self.Dtheta_loss /= self.n_iter_survey
         self.Dtheta_loss = np.sqrt(self.Dtheta_loss)
+
+        # compare with prior, if set
+        # Dtheta_loss should not exceed prior width in any direction
+        if not np.isscalar(self.model_inst.prior_invsig2):
+            for p in range(self.n_params):
+                if self.model_inst.prior_invsig2[p] > 0.0:
+                    # print([self.Dtheta_loss[p],1.0/np.sqrt(self.model_inst.prior_invsig2[p])])
+                    self.Dtheta_loss[p] = np.min([self.Dtheta_loss[p],1.0/np.sqrt(self.model_inst.prior_invsig2[p])])
+                    # print(self.Dtheta_loss[p])
+                    
         if self.verbose:
             self.print_this('... avg Dtheta_loss: ['+','.join(['{0:.3e}'.format(self.Dtheta_loss[p]) for p in range(self.n_params)])+']',
                             self.logfile)
@@ -648,6 +661,10 @@ class Mountaineer(Module,MLUtilities,Utilities):
             model_survey.backward(dLdm) # adam variables (M,V) updated but not used since no sgd_step invoked
             self.N_evals_deriv += 1
             survey_dLdtheta[s] = model_survey.dLdtheta[:,0]
+            #######################
+            # modified Nov 23, 2025
+            survey_dLdtheta[s] += 2*(model_survey.params[:,0] - model_survey.prior_mean)*model_survey.prior_invsig2
+            #######################
             # write this somewhere so as to not lose evaluations !
             if self.verbose:
                 self.status_bar(s,self.N_survey)
@@ -984,19 +1001,16 @@ class Mountaineer(Module,MLUtilities,Utilities):
         # min,max values of lrate
         # set typical lrate vector demanding Dtheta_loss (typical width) be resolved with ~N_resolve resolution elements per step
         lrate_typical = self.Dtheta_loss/self.N_resolve
-        # # set typical lrate vector demanding N_traverse*Dtheta be traversed in >~ N_epochs
-        # # where Dtheta = sqrt[(p_max-p_min)*Dtheta_loss] i.e. geometric mean of prior width and typical loss variation scale
-        # lrate_typical = self.N_traverse*np.sqrt((self.param_maxs - self.param_mins)*self.Dtheta_loss)/np.max([3,self.max_epoch])
-        self.lrate_min = lrate_typical # 1e-2 # 0.15
-        self.lrate_max = lrate_typical # 1e-2 # 0.15 # will be changed below
-        self.lrate_largest_max = self.lrate_max_fac*lrate_typical # 1e-2 # 0.25
+        self.lrate_min = lrate_typical 
+        self.lrate_max = lrate_typical # will be changed below
+        self.lrate_largest_max = self.lrate_max_fac*lrate_typical
 
         ranges = self.param_maxs_old - self.param_mins_old
         changes_pmaxs = np.fabs(self.param_maxs - self.param_maxs_old)/ranges
         changes_pmins = np.fabs(self.param_mins - self.param_mins_old)/ranges
         # above are changes in maxs,mins, relative to old ranges
         max_rel_change = np.maximum(changes_pmaxs,changes_pmins) # vector of largest relative change
-        self.lrate_max = np.minimum(self.lrate_largest_max,self.lrate_max*(1+max_rel_change))
+        self.lrate_max = np.minimum(self.lrate_largest_max,self.lrate_max*(1+max_rel_change)) # --> ONLY ACTIVATES IF self.lrate_largest_max > 1
         self.lrate_max = np.maximum(self.lrate_min,self.lrate_max)
 
         lrate_vals = np.zeros((self.walker_layers.max()+1,self.n_params))
