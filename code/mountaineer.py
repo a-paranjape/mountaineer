@@ -317,7 +317,7 @@ class Model(Module,MLUtilities):
         self.params -= lrate*(dtheta.T - 2*self.prior_invsig2*self.prior_mean) # note dtheta.T to maintain (1,nparam)
         self.params = self.params.T # back to (nparam,1)
         #######################
-        self.params = self.params - lrate*dtheta
+        # self.params = self.params - lrate*dtheta
         
         return 
     ###########################################
@@ -650,7 +650,6 @@ class Mountaineer(Module,MLUtilities,Utilities):
             Ypred = model_survey.forward(self.X)
             self.N_evals_model += 1
             survey_loss[s] = loss_inst.forward(Ypred)
-        
             #######################
             # modified Oct 31, 2025; bug fix Nov 18, 2025
             prior_diff = (model_survey.params[:,0] - model_survey.prior_mean)*np.sqrt(model_survey.prior_invsig2)
