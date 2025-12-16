@@ -559,8 +559,9 @@ class Mountaineer(Module,MLUtilities,Utilities):
             self.print_this('Surveying using {0:d} locations {1:d} times...'.format(self.N_survey,self.n_iter_survey),self.logfile)
         pmaxs = np.zeros((self.n_iter_survey,self.n_params))
         pmins = np.zeros((self.n_iter_survey,self.n_params))
-        sparam = []
-        sloss = []
+        sparam = []    # storage for individual survey params
+        sloss = []     # and loss values
+        nsurv_act = [] # storage for survey sizes after excluding NaNs
         for i in range(self.n_iter_survey):
             if self.verbose:
                 self.print_this('... iteration {0:d}'.format(i+1),self.logfile)
@@ -571,6 +572,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
             pmins[i] = self.param_mins
             sparam.append(self.survey_params)
             sloss.append(self.survey_loss)
+            nsurv_act.append(self.survey_params.shape[0])
             # reset ranges for next iteration
             self.param_maxs = copy.deepcopy(self.param_maxs_old)
             self.param_mins = copy.deepcopy(self.param_mins_old)
@@ -596,12 +598,17 @@ class Mountaineer(Module,MLUtilities,Utilities):
             
         self.param_maxs = np.median(pmaxs,axis=0)
         self.param_mins = np.median(pmins,axis=0)
-        
+
+        self.N_survey_tot = np.sum(nsurv_act) # update to actual number of surveyed points
         self.survey_params = np.zeros((self.N_survey_tot,self.n_params))
         self.survey_loss = np.zeros(self.N_survey_tot)
+        counter = 0
         for i in range(self.n_iter_survey):
-            self.survey_params[i*self.N_survey:(i+1)*self.N_survey,:] = sparam[i]
-            self.survey_loss[i*self.N_survey:(i+1)*self.N_survey] = sloss[i]
+            self.survey_params[counter:counter+nsurv_act[i],:] = sparam[i]
+            self.survey_loss[counter:counter+nsurv_act[i]] = sloss[i]
+            counter += nsurv_act[i]
+            # self.survey_params[i*self.N_survey:(i+1)*self.N_survey,:] = sparam[i]
+            # self.survey_loss[i*self.N_survey:(i+1)*self.N_survey] = sloss[i]
 
         del sparam,sloss
         gc.collect()
@@ -629,6 +636,7 @@ class Mountaineer(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... creating survey',self.logfile)
         survey_params,survey_lhc_layers = self.gen_latin_hypercube(Nsamp=self.N_survey,dim=self.n_params,return_layers=True,
+                                                                   rng=self.rng,
                                                                    param_mins=self.param_mins,param_maxs=self.param_maxs)
         # survey_params has shape (N_survey,n_params)
         #        layers ..  ..    (Nsurvey,)
